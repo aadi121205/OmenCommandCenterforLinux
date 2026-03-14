@@ -12,6 +12,7 @@ TRANSLATIONS = {
         # Nav
         "games": "Oyunlar", "tools": "Araçlar", "fan": "Performans",
         "lighting": "Aydınlatma", "mux": "MUX", "settings": "Ayarlar",
+        "keyboard": "Klavye",
         # Fan page
         "fan_control": "Fan Kontrolü", "system_status": "SİSTEM DURUMU",
         "power_profile": "GÜÇ PROFİLİ", "fan_mode": "FAN MODU",
@@ -29,6 +30,15 @@ TRANSLATIONS = {
         "effect": "EFEKT", "direction": "YÖN", "speed": "HIZ", "brightness": "PARLAKLIK",
         "static_eff": "Sabit", "breathing": "Nefes Alma", "wave": "Dalga", "cycle": "Renk Döngüsü",
         "ltr": "Sol → Sağ", "rtl": "Sağ → Sol",
+        "win_lock": "Oyun Tuş Kilidi",
+        # Keyboard page
+        "keyboard_shortcuts": "Klavye Kısayolları", "special_keys": "ÖZEL TUŞLAR",
+        "omen_key": "Omen Tuşu", "victus_key": "Victus Tuşu",
+        "calc_key": "Hesap Makinesi Tuşu", "prt_sc_fix": "Print Screen (PrtSc) Düzelt",
+        "prt_sc_desc": "PrtSc tuşunun Win+Shift+S yerine gerçek Print Screen olarak çalışmasını sağlar.",
+        "f1_fix": "F1 (Sunum) Tuşunu Düzelt",
+        "f1_desc": "F1 tuşunun Super+P yerine standart F1 olarak çalışmasını sağlar.",
+        "apply_shortcuts": "Kısayolları Uygula",
         # MUX page
         "mux_switch": "MUX Anahtarlayıcı", "gpu_info": "GPU BİLGİSİ",
         "gpu_card": "Ekran Kartı", "driver_ver": "Sürücü Sürümü",
@@ -112,6 +122,7 @@ TRANSLATIONS = {
         # Nav
         "games": "Games", "tools": "Tools", "fan": "Performance",
         "lighting": "Lighting", "mux": "MUX", "settings": "Settings",
+        "keyboard": "Keyboard",
         # Fan page
         "fan_control": "Fan Control", "system_status": "SYSTEM STATUS",
         "power_profile": "POWER PROFILE", "fan_mode": "FAN MODE",
@@ -129,6 +140,15 @@ TRANSLATIONS = {
         "effect": "EFFECT", "direction": "DIRECTION", "speed": "SPEED", "brightness": "BRIGHTNESS",
         "static_eff": "Static", "breathing": "Breathing", "wave": "Wave", "cycle": "Cycle",
         "ltr": "Left → Right", "rtl": "Right → Left",
+        "win_lock": "Gaming Key Lock",
+        # Keyboard page
+        "keyboard_shortcuts": "Keyboard Shortcuts", "special_keys": "SPECIAL KEYS",
+        "omen_key": "Omen Key", "victus_key": "Victus Key",
+        "calc_key": "Calculator Key", "prt_sc_fix": "Fix Print Screen (PrtSc)",
+        "prt_sc_desc": "Makes PrtSc key work as real Print Screen instead of Win+Shift+S.",
+        "f1_fix": "Fix F1 (Presentation) Key",
+        "f1_desc": "Makes F1 key work as standard F1 instead of Super+P.",
+        "apply_shortcuts": "Apply Shortcuts",
         # MUX page
         "mux_switch": "MUX Switch", "gpu_info": "GPU INFO",
         "gpu_card": "Graphics Card", "driver_ver": "Driver Version",

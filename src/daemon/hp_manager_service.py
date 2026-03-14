@@ -202,7 +202,7 @@ class RGBController:
     def __init__(self):
         self.driver_path = self._find_rgb_path()
         self.available = self.driver_path is not None
-        self.last_written = [None] * 4
+        self.last_written = [None] * 8
 
     def _find_rgb_path(self):
         """Find the RGB control sysfs path.
@@ -237,7 +237,7 @@ class RGBController:
         return self.available
 
     def write_zone(self, zone, hex_color):
-        if not self.available or zone < 0 or zone > 3:
+        if not self.available or zone < 0 or zone > 7:
             return
         if self.last_written[zone] == hex_color:
             return
@@ -251,7 +251,7 @@ class RGBController:
             pass
 
     def write_all(self, hex_list):
-        for i, hc in enumerate(hex_list[:4]):
+        for i, hc in enumerate(hex_list[:8]):
             self.write_zone(i, hc)
 
     def write_brightness(self, on):
@@ -261,6 +261,17 @@ class RGBController:
         try:
             with open(path, "w") as f:
                 f.write("1" if on else "0")
+                f.flush()
+        except Exception:
+            pass
+
+    def write_win_lock(self, locked):
+        if not self.available:
+            return
+        path = f"{self.driver_path}/win_lock"
+        try:
+            with open(path, "w") as f:
+                f.write("1" if locked else "0")
                 f.flush()
         except Exception:
             pass
@@ -431,19 +442,22 @@ class AnimationEngine(threading.Thread):
                 bri: float = float(bri_v if isinstance(bri_v, (int, float)) else 100) / 100.0
                 spd_v = state.get("speed", 50)
                 spd: float = float(spd_v if isinstance(spd_v, (int, float)) else 50)
-                cols_v = state.get("colors", ["FF0000"] * 4)
-                cols: typing.List[str] = [str(c) for c in cols_v] if isinstance(cols_v, list) else ["FF0000"] * 4
+                cols_v = state.get("colors", ["FF0000"] * 8)
+                cols: typing.List[str] = [str(c) for c in cols_v] if isinstance(cols_v, list) else ["FF0000"] * 8
                 d: str = str(state.get("direction", "ltr"))
 
             if not pwr:
                 self.rgb.write_brightness(False)
-                self.rgb.write_all(["000000"] * 4)
+                self.rgb.write_all(["000000"] * 8)
                 time.sleep(0.5)
                 continue
 
             self.rgb.write_brightness(True)
             t = time.time()
             targets = []
+            
+            # Use 20fps for animations (50ms) to save CPU/WMI calls
+            FRAME_TIME = 0.05
 
             if mode == "static":
                 targets = [self._hex_to_rgb(c) for c in cols]
@@ -452,15 +466,15 @@ class AnimationEngine(threading.Thread):
                 phase_0_1 = (math.sin(2 * math.pi * t / period) + 1) / 2
                 phase = 0.1 + (0.9 * phase_0_1)
                 base = self._hex_to_rgb(cols[0])
-                targets = [(int(base[0] * phase), int(base[1] * phase), int(base[2] * phase))] * 4
+                targets = [(int(base[0] * phase), int(base[1] * phase), int(base[2] * phase))] * 8
             elif mode == "cycle":
                 hue = (t * (spd * 0.003)) % 1.0
                 r, g, b = colorsys.hsv_to_rgb(hue, 1.0, 1.0)
-                targets = [(int(r * 255), int(g * 255), int(b * 255))] * 4
+                targets = [(int(r * 255), int(g * 255), int(b * 255))] * 8
             elif mode == "wave":
                 speed_factor = spd * 0.007
-                for i in range(4):
-                    offset = (i * 0.15) if d == "ltr" else ((3 - i) * 0.15)
+                for i in range(8):
+                    offset = (i * 0.15) if d == "ltr" else ((7 - i) * 0.15)
                     hue = (t * speed_factor + offset) % 1.0
                     r, g, b = colorsys.hsv_to_rgb(hue, 1.0, 1.0)
                     targets.append((int(r * 255), int(g * 255), int(b * 255)))
@@ -474,7 +488,8 @@ class AnimationEngine(threading.Thread):
                 time.sleep(0.5)
             else:
                 elapsed = time.time() - loop_start
-                time.sleep(max(0.033 - elapsed, 0.001))
+                # Targeting 20fps
+                time.sleep(max(FRAME_TIME - elapsed, 0.001))
 
     def _hex_to_rgb(self, h):
         h = str(h).lstrip("#")
@@ -493,13 +508,14 @@ class AnimationEngine(threading.Thread):
 # ============================================================
 state: typing.Dict[str, typing.Any] = {
     "mode": "static",
-    "colors": ["FF0000"] * 4,
+    "colors": ["FF0000"] * 8,
     "speed": 50,
     "brightness": 100,
     "direction": "ltr",
     "power": True,
     "fan_mode": "auto",
     "power_profile": "balanced",
+    "win_lock": False,
 }
 
 ALLOWED_PACKAGES = {
@@ -545,7 +561,7 @@ def load_state():
                     if isinstance(colors, list):
                         cleaned: typing.List[str] = []
                         for i, c in enumerate(colors):
-                            if i >= 4:
+                            if i >= 8:
                                 break
                             c_str = str(c).lstrip("#").upper()
                             if HEX_COLOR_RE.match(c_str):
@@ -555,9 +571,9 @@ def load_state():
                             c0 = str(curr[0]) if isinstance(curr, list) and len(curr) > 0 else "FF0000"
                             new_colors = []
                             for c in cleaned:
-                                if len(new_colors) < 4:
+                                if len(new_colors) < 8:
                                     new_colors.append(c)
-                            while len(new_colors) < 4:
+                            while len(new_colors) < 8:
                                 new_colors.append(c0)
                             state["colors"] = new_colors
                     speed = loaded.get("speed")
@@ -578,6 +594,9 @@ def load_state():
                     pp = loaded.get("power_profile")
                     if isinstance(pp, str) and pp in ("power-saver", "balanced", "performance"):
                         state["power_profile"] = pp
+                    # Restore win lock
+                    if isinstance(loaded.get("win_lock"), bool):
+                        state["win_lock"] = loaded["win_lock"]
         except Exception:
             pass
 
@@ -615,6 +634,7 @@ class HPManagerService(object):
         <method name="GetSystemInfo"><arg type="s" name="j" direction="out"/></method>
         <method name="CleanMemory"><arg type="s" name="result" direction="out"/></method>
         <method name="InstallPackage"><arg type="s" name="pkg" direction="in"/><arg type="s" name="result" direction="out"/></method>
+        <method name="SetWinLock"><arg type="b" name="locked" direction="in"/><arg type="s" name="result" direction="out"/></method>
       </interface>
     </node>
     """
@@ -626,9 +646,9 @@ class HPManagerService(object):
         with lock:
             state["mode"] = "static"
             state["power"] = True
-            if z == 4:
-                state["colors"] = [c] * 4
-            elif 0 <= z < 4:
+            if z == 8:
+                state["colors"] = [c] * 8
+            elif 0 <= z < 8:
                 state["colors"][z] = c
             else:
                 return "FAIL"
@@ -722,163 +742,72 @@ class HPManagerService(object):
         })
 
     def GetSystemInfo(self):
-        """Return basic system info for the GUI."""
+        si = state.get("_system_info_cache")
+        now = time.time()
+        if si and (now - state.get("_system_info_last", 0) < 10):
+             si["cpu_temp"] = self._get_cached_cpu_temp()
+             si["gpu_temp"] = self._get_cached_gpu_temp()
+             return json.dumps(si)
         info = {
-            "hostname": platform.node(),
-            "kernel": platform.release(),
-            "os_name": "Linux",
-            "cpu_temp": 0.0,
-            "gpu_temp": 0.0,
-            "product_name": "HP Laptop"
+            "hostname": platform.node(), "kernel": platform.release(),
+            "os_name": "Linux", "cpu_temp": self._get_cached_cpu_temp(),
+            "gpu_temp": self._get_cached_gpu_temp(), "product_name": "HP Laptop"
         }
-        
-        # Detect product name
-        for dmi_file in ("/sys/devices/virtual/dmi/id/product_name",
-                         "/sys/devices/virtual/dmi/id/product_family"):
-            try:
-                if os.path.exists(dmi_file):
+        for dmi_file in ("/sys/devices/virtual/dmi/id/product_name", "/sys/devices/virtual/dmi/id/product_family"):
+            if os.path.exists(dmi_file):
+                try:
                     with open(dmi_file) as f:
-                        info["product_name"] = f.read().strip()
-                        break
-            except Exception: pass
-
-        try:
-            with open("/etc/os-release") as f:
-                for line in f:
-                    if line.startswith("PRETTY_NAME="):
-                        info["os_name"] = line.split("=")[1].strip().strip('"')
-                        break
-        except Exception:
-            pass
-
-        # CPU temp detection — Professional Hierarchy (btop style)
-        cpu_candidates = []
-        
-        # Driver Priority: Special drivers > Core drivers > Generic ACPI
-        DRIVER_RANK = {
-            "zenpower": 100,
-            "coretemp": 90,
-            "k10temp": 90,
-            "cpu_thermal": 80,
-            "hp_wmi": 60,
-            "acpitz": 30
-        }
-
-        # Label Priority: Tdie/Package are best for overall temp
-        LABEL_RANK = {
-            "tdie": 100,
-            "package id 0": 95,
-            "tctl": 90,
-            "core": 80,
-            "composite": 50,
-            "temp": 10
-        }
-
-        for drv, drv_score in DRIVER_RANK.items():
-            hp_path = _find_hwmon_by_name(drv)
-            if not hp_path:
-                continue
-
-            for tf in glob.glob(os.path.join(hp_path, "temp*_input")):
-                try:
-                    with open(tf) as f:
-                        t = int(f.read().strip()) / 1000
-                    
-                    if t <= 0 or t > 125: continue # Ignore physical impossibilities
-                    
-                    label_path = tf.replace("_input", "_label")
-                    label = ""
-                    if os.path.exists(label_path):
-                        with open(label_path) as f:
-                            label = f.read().strip().lower()
-                    
-                    # Calculate weight
-                    label_score = 0
-                    for l_key, score in LABEL_RANK.items():
-                        if l_key in label:
-                            label_score = max(label_score, score)
-                    
-                    total_weight = drv_score + label_score
-                    
-                    # Anti-Stuck & Invalid Reading Logic
-                    # Many drivers (especially acpitz/zenpower on unsupported CPUs) report stuck 75.0 or 0.0
-                    if t == 75.0 or t == 0.0:
-                        total_weight -= 500 # Heavy penalty for suspicious/static readings
-                    elif t == prev_temp if (prev_temp := info.get("cpu_temp", 0)) > 0 else 0:
-                        # Slight penalty for values that never change? (Maybe too aggressive)
-                        pass
-                        
-                    cpu_candidates.append({
-                        "temp": t,
-                        "weight": total_weight,
-                        "driver": drv,
-                        "label": label
-                    })
-                except Exception: continue
-        
-        if cpu_candidates:
-            # Sort by weight (primary) and then temp (secondary - usually want the hottest core if labels are same)
-            cpu_candidates.sort(key=lambda x: (x["weight"], x["temp"]), reverse=True)
-            info["cpu_temp"] = cpu_candidates[0]["temp"]
-        else:
-            # Absolute fallback: Find ANY reasonable temp from ANY hwmon
-            try:
-                for path in glob.glob("/sys/class/hwmon/hwmon*/temp*_input"):
-                    with open(path) as f:
-                        t = int(f.read().strip()) / 1000
-                    if 35 < t < 110:
-                        info["cpu_temp"] = t
-                        break
-            except Exception: pass
-
-        # GPU temp — nvidia-smi first, amdgpu hwmon fallback
-        if shutil.which("nvidia-smi"):
-            # Check if dGPU is suspended to avoid waking it
-            is_awake = True
-            # Auto-detect NVIDIA PCI device path (vendor 0x10de)
-            pci_path = None
-            try:
-                for dev in os.listdir("/sys/bus/pci/devices"):
-                    vendor_file = f"/sys/bus/pci/devices/{dev}/vendor"
-                    if os.path.exists(vendor_file):
-                        with open(vendor_file) as f:
-                            if f.read().strip() == "0x10de":
-                                pci_path = f"/sys/bus/pci/devices/{dev}/power/runtime_status"
-                                break
-            except Exception:
-                pass
-
-            if pci_path and os.path.exists(pci_path):
-                try:
-                    with open(pci_path) as f:
-                        if f.read().strip() == "suspended":
-                            is_awake = False
-                except Exception:
-                    pass
-
-            if is_awake:
-                try:
-                    info["gpu_temp"] = float(
-                        subprocess.check_output(
-                            ["nvidia-smi", "--query-gpu=temperature.gpu",
-                             "--format=csv,noheader,nounits"],
-                            stderr=subprocess.DEVNULL, timeout=2
-                        ).decode().strip()
-                    )
-                except Exception:
-                    pass
-
-        # AMD GPU fallback (no CPU pkg_temp fallback — that's a different sensor)
-        if info["gpu_temp"] == 0:
-            hp = _find_hwmon_by_name("amdgpu")
-            if hp:
-                try:
-                    with open(os.path.join(hp, "temp1_input")) as f:
-                        info["gpu_temp"] = int(f.read().strip()) / 1000
-                except Exception:
-                    pass
-
+                        info["product_name"] = f.read().strip(); break
+                except: pass
+        state["_system_info_cache"] = info
+        state["_system_info_last"] = now
         return json.dumps(info)
+
+    def _get_cached_cpu_temp(self):
+        best_t, best_score = 0.0, -1000
+        RANK_DRV = {"zenpower": 100, "coretemp": 90, "k10temp": 90, "cpu_thermal": 80, "hp_wmi": 60, "acpitz": 30}
+        RANK_LBL = {"tdie": 100, "package id 0": 95, "tctl": 90, "core": 80, "composite": 50}
+        try:
+            for d in os.listdir("/sys/class/hwmon"):
+                path = os.path.join("/sys/class/hwmon", d)
+                try:
+                    with open(os.path.join(path, "name")) as f: drv = f.read().strip().lower()
+                except: continue
+                d_score = RANK_DRV.get(drv, 10)
+                for tf in glob.glob(os.path.join(path, "temp*_input")):
+                    try:
+                        with open(tf) as f: t = int(f.read().strip()) / 1000.0
+                        if t <= 0 or t > 125: continue
+                        label = ""
+                        lp = tf.replace("_input", "_label")
+                        if os.path.exists(lp):
+                            with open(lp) as f: label = f.read().strip().lower()
+                        l_score = 0
+                        for k, v in RANK_LBL.items():
+                            if label and (k in str(label)): l_score = max(l_score, v)
+                        score = d_score + l_score
+                        if t == 75.0 or t == 0.0: score -= 500
+                        if score > best_score: best_score, best_t = score, t
+                    except: pass
+        except: pass
+        return best_t
+
+    def _get_cached_gpu_temp(self):
+        if shutil.which("nvidia-smi"):
+            try:
+                out = subprocess.check_output(["nvidia-smi", "--query-gpu=temperature.gpu", "--format=csv,noheader,nounits"], stderr=subprocess.DEVNULL, timeout=2).decode().strip()
+                return float(out)
+            except: pass
+        try:
+            for d in os.listdir("/sys/class/hwmon"):
+                path = os.path.join("/sys/class/hwmon", d)
+                try:
+                    with open(os.path.join(path, "name")) as f: name = f.read().strip().lower()
+                    if name in ("amdgpu", "i915"):
+                        with open(os.path.join(path, "temp1_input")) as f: return int(f.read().strip()) / 1000.0
+                except: continue
+        except: pass
+        return "NOT_REACHABLE"
 
     def CleanMemory(self):
         """Clear pagecache, dentries, and inodes securely as root."""
@@ -909,6 +838,14 @@ class HPManagerService(object):
 
         return "No supported package manager found"
 
+    def SetWinLock(self, locked):
+        logger.info(f"SetWinLock: {'LOCKED' if locked else 'UNLOCKED'}")
+        with lock:
+            state["win_lock"] = bool(locked)
+        rgb_ctrl.write_win_lock(bool(locked))
+        save_state()
+        return "OK"
+
 
 def main():
     if os.geteuid() != 0:
@@ -938,6 +875,7 @@ def main():
             logger.info(f"Restored power profile '{saved_pp}' from saved state (success={ok})")
 
     if rgb_ctrl.is_available():
+        rgb_ctrl.write_win_lock(state.get("win_lock", False))
         engine.start()
         logger.info("RGB engine started")
 

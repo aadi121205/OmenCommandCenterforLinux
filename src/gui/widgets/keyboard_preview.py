@@ -34,7 +34,7 @@ class KeyboardPreview(Gtk.DrawingArea):
         self.speed = 50
         self.brightness = 100
         self.direction = "ltr"
-        self.zone_colors = [(0, 0, 0)] * 4  # RGBA tuples (Start transparent/black to prevent red flash)
+        self.zone_colors = [(0.1, 0.1, 0.1)] * 8  # RGBA floats
         self.set_draw_func(self._draw)
         self._anim_timer = None
         
@@ -62,12 +62,12 @@ class KeyboardPreview(Gtk.DrawingArea):
             self._anim_timer = None
 
     def set_zone_color(self, zone, r, g, b):
-        if 0 <= zone < 4:
+        if 0 <= zone < 8:
             self.zone_colors[zone] = (r, g, b)
         self.queue_draw()
 
     def set_all_zones(self, r, g, b):
-        self.zone_colors = [(r, g, b)] * 4
+        self.zone_colors = [(r, g, b)] * 8
         self.queue_draw()
 
     def _draw(self, _, cr, w, h):
@@ -75,9 +75,9 @@ class KeyboardPreview(Gtk.DrawingArea):
             return
             
         # 1. Draw Background Image (scaled to fit drawing area)
-        if self.bg_surf:
-            img_w = self.bg_surf.get_width()
-            img_h = self.bg_surf.get_height()
+        if self.bg_surf is not None:
+            img_w: float = float(self.bg_surf.get_width())
+            img_h: float = float(self.bg_surf.get_height())
             scale_x = w / img_w
             scale_y = h / img_h
             scale = min(scale_x, scale_y)
@@ -128,7 +128,7 @@ class KeyboardPreview(Gtk.DrawingArea):
         
         if not self.power:
             # Everything off
-            actual_colors = [(0, 0, 0) for _ in range(4)]
+            actual_colors = [(0, 0, 0) for _ in range(8)]
         else:
             speed_factor = max(1, self.speed) / 50.0 # 0.02 - 2.0
             
@@ -149,7 +149,7 @@ class KeyboardPreview(Gtk.DrawingArea):
                     # Optional: In wave mode usually all zones take color 0 or cycle through spectrum
                     # For simplicity, we pulse the color they have currently assigned
                     r, g, b = self.zone_colors[i]
-                    actual_colors[i] = (r * intensity, g * intensity, b * intensity)
+                    actual_colors[i] = (float(r) * float(intensity), float(g) * float(intensity), float(b) * float(intensity))
                     
             elif self.mode == "cycle":
                 # Cycle through hues synchronously
@@ -167,7 +167,9 @@ class KeyboardPreview(Gtk.DrawingArea):
             for i in range(4):
                 if sum(actual_colors[i]) > 0:
                     cx, cy = centers[i] # Use the pre-defined center for the zone
-                    pat = cairo.RadialGradient(cx, cy, 0, cx, cy, drawn_w * 0.25)
+                    # Ensure drawn_w is float for multiplication
+                    radius: float = float(drawn_w) * 0.25
+                    pat = cairo.RadialGradient(cx, cy, 0, cx, cy, radius)
                     pat.add_color_stop_rgba(0, actual_colors[i][0], actual_colors[i][1], actual_colors[i][2], 0.4) # Inner intense
                     pat.add_color_stop_rgba(0.6, actual_colors[i][0], actual_colors[i][1], actual_colors[i][2], 0.1) # Middle soft
                     pat.add_color_stop_rgba(1, actual_colors[i][0], actual_colors[i][1], actual_colors[i][2], 0) # Outer transparent

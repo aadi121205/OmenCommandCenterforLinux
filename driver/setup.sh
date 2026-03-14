@@ -175,10 +175,9 @@ do_install() {
     rm -rf "/usr/src/${MODNAME}-${MODVER}"
 
     # Ensure /usr/src directory exists and copy source files
-    info "Preparing source for DKMS..."
-    mkdir -p "/usr/src/${MODNAME}-${MODVER}"
-    # Copy only necessary files to avoid bloat/risks
-    cp "$SCRIPT_DIR/dkms.conf" "$SCRIPT_DIR/Makefile" "$SCRIPT_DIR"/*.c "$SCRIPT_DIR"/*.h "/usr/src/${MODNAME}-${MODVER}/"
+    # Prepare source for DKMS
+    cp "$SCRIPT_DIR/dkms.conf" "$SCRIPT_DIR/Makefile" "$SCRIPT_DIR"/*.c "/usr/src/${MODNAME}-${MODVER}/"
+    cp "$SCRIPT_DIR"/*.h "/usr/src/${MODNAME}-${MODVER}/" 2>/dev/null || true
 
     if $STOCK_FAN_SUPPORT; then
         info "Kernel $(uname -r) detected (>= 7.0) — stock hp-wmi already has Omen fan control."

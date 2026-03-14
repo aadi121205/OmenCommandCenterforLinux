@@ -16,7 +16,7 @@ def T(k):
     return _T(k)
 
 
-APP_VERSION = "1.1.2"
+APP_VERSION = "1.1.3"
 GITHUB_REPO = "yunusemreyl/LaptopManagerForHP"
 GITHUB_API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 GITHUB_RELEASES_URL = f"https://github.com/{GITHUB_REPO}/releases/latest"
@@ -508,7 +508,7 @@ class SettingsPage(Gtk.Box):
             pass
         out.append("Service Status:")
         try:
-            status = subprocess.check_output(["systemctl", "status", "hp-manager.service"], stderr=subprocess.STDOUT, timeout=2).decode(errors='ignore')
+            status = subprocess.check_output(["systemctl", "status", "com.yyl.hpmanager.service"], stderr=subprocess.STDOUT, timeout=2).decode(errors='ignore')
             lines = status.splitlines()
             for i in range(min(5, len(lines))):
                 out.append(f"  {lines[i].strip()}")

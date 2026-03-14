@@ -15,6 +15,7 @@
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
 #include <linux/acpi.h>
+#include <linux/errno.h>
 #include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
@@ -38,6 +39,7 @@ enum hp_wmi_command {
   HPWMI_READ = 0x01,
   HPWMI_WRITE = 0x02,
   HPWMI_BACKLIGHT = 0x20009,
+  HPWMI_GAMING_KEY = 0x2000B,
 };
 
 enum hp_wmi_backlight_commandtype {
@@ -139,7 +141,7 @@ out_free:
  * echo "FF0000" > /sys/devices/platform/hp-rgb-lighting/zone0
  * cat  /sys/devices/platform/hp-rgb-lighting/zone0   → "FF0000"
  * ══════════════════════════════════════════════════════════════════ */
-#define RGB_ZONE_COUNT 4
+#define RGB_ZONE_COUNT 8
 #define COLOR_TABLE_SIZE 128
 #define COLOR_OFFSET 25 /* RGB data starts at byte 25 in the table */
 
@@ -228,16 +230,45 @@ static ssize_t brightness_store(struct device *dev,
   return count;
 }
 
+/* ── gaming key (win lock) ── */
+static ssize_t win_lock_show(struct device *dev,
+                              struct device_attribute *attr, char *buf) {
+  u8 data = 0;
+  hp_wmi_perform_query(HPWMI_GAMING_KEY, HPWMI_READ, &data,
+                       sizeof(data), sizeof(data));
+  return sysfs_emit(buf, "%d\n", data & 0x01);
+}
+
+static ssize_t win_lock_store(struct device *dev,
+                               struct device_attribute *attr, const char *buf,
+                               size_t count) {
+  unsigned int val;
+  u8 data;
+  if (kstrtouint(buf, 10, &val))
+    return -EINVAL;
+  data = val ? 0x01 : 0x00;
+  hp_wmi_perform_query(HPWMI_GAMING_KEY, HPWMI_WRITE, &data,
+                       sizeof(data), sizeof(data));
+  return count;
+}
+
 /* ── sysfs attributes ── */
 static DEVICE_ATTR(zone0, 0644, zone_show, zone_store);
 static DEVICE_ATTR(zone1, 0644, zone_show, zone_store);
 static DEVICE_ATTR(zone2, 0644, zone_show, zone_store);
 static DEVICE_ATTR(zone3, 0644, zone_show, zone_store);
+static DEVICE_ATTR(zone4, 0644, zone_show, zone_store);
+static DEVICE_ATTR(zone5, 0644, zone_show, zone_store);
+static DEVICE_ATTR(zone6, 0644, zone_show, zone_store);
+static DEVICE_ATTR(zone7, 0644, zone_show, zone_store);
 static DEVICE_ATTR_RW(brightness);
+static DEVICE_ATTR_RW(win_lock);
 
 static struct attribute *hp_rgb_lighting_attrs[] = {
-    &dev_attr_zone0.attr, &dev_attr_zone1.attr,      &dev_attr_zone2.attr,
-    &dev_attr_zone3.attr, &dev_attr_brightness.attr, NULL,
+    &dev_attr_zone0.attr, &dev_attr_zone1.attr, &dev_attr_zone2.attr,
+    &dev_attr_zone3.attr, &dev_attr_zone4.attr, &dev_attr_zone5.attr,
+    &dev_attr_zone6.attr, &dev_attr_zone7.attr, &dev_attr_brightness.attr,
+    &dev_attr_win_lock.attr, NULL,
 };
 ATTRIBUTE_GROUPS(hp_rgb_lighting);
 

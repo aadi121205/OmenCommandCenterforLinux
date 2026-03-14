@@ -44,17 +44,17 @@ class LightingPage(Gtk.Box):
         self.set_margin_bottom(30)
 
         self.model_type = _detect_model_type()
-        self.num_zones = 1 if self.model_type == "victus" else 4
+        self.num_zones = 1 if self.model_type == "victus" else 8
 
         self.power = True
         self.mode = "static"
         self.speed = 50
         self.brightness = 100
         self.direction = "ltr"
-        self.zone_rgba = [Gdk.RGBA() for _ in range(4)]
+        self.zone_rgba = [Gdk.RGBA() for _ in range(8)]
         for c in self.zone_rgba:
             c.parse("red")
-        self.selected_zone = 4 if self.num_zones == 4 else 0
+        self.selected_zone = 8 if self.num_zones == 8 else 0
 
         self._speed_timer = None
         self._bri_timer = None
@@ -110,8 +110,8 @@ class LightingPage(Gtk.Box):
 
             self.dir_dd.set_selected(0 if self.direction == "ltr" else 1)
 
-            colors = st.get("colors", ["FF0000"] * 4)
-            for i in range(4):
+            colors = st.get("colors", ["FF0000"] * 8)
+            for i in range(min(len(colors), 8)):
                 c = Gdk.RGBA()
                 c.parse(f"#{colors[i]}")
                 self.zone_rgba[i] = c
@@ -143,10 +143,10 @@ class LightingPage(Gtk.Box):
         content.append(preview_frame)
 
         # Zone Selection (Omen only)
-        if self.num_zones == 4:
+        if self.num_zones == 8:
             zone_box = Gtk.Box(spacing=8, halign=Gtk.Align.CENTER)
             self.zone_group = None
-            zones = [f"{T('zone')} 1", f"{T('zone')} 2", f"{T('zone')} 3", f"{T('zone')} 4", T("all_zones")]
+            zones = [f"{T('zone')} {i+1}" for i in range(8)] + [T("all_zones")]
             for i, label in enumerate(zones):
                 btn = Gtk.ToggleButton(label=label)
                 btn.add_css_class("zone-btn")
@@ -154,7 +154,7 @@ class LightingPage(Gtk.Box):
                     btn.set_group(self.zone_group)
                 else:
                     self.zone_group = btn
-                if i == 4:
+                if i == 8:
                     btn.set_active(True)
                 btn.connect("toggled", lambda w, idx=i: self._on_zone_select(idx) if w.get_active() else None)
                 zone_box.append(btn)
@@ -281,13 +281,13 @@ class LightingPage(Gtk.Box):
                 try: self.service.SetMode("static", self.speed)
                 except Exception: pass
 
-        if self.num_zones == 1 or self.selected_zone == 4:
-            for i in range(4):
+        if self.num_zones == 1 or self.selected_zone == 8:
+            for i in range(8):
                 self.zone_rgba[i] = c
                 self.kb_preview.set_zone_color(i, c.red, c.green, c.blue)
             if self.service:
                 try:
-                    self.service.SetColor(4, hex_color)
+                    self.service.SetColor(8, hex_color)
                 except Exception: pass
         else:
             self.zone_rgba[self.selected_zone] = c
@@ -306,7 +306,12 @@ class LightingPage(Gtk.Box):
             c = dialog.choose_rgba_finish(result)
             hex_color = f"#{int(c.red * 255):02X}{int(c.green * 255):02X}{int(c.blue * 255):02X}"
             self._on_color(hex_color)
-        except Exception: pass
+        except Exception: 
+            pass
+        finally:
+            root = self.get_root()
+            if root:
+                root.present()
 
     def _on_mode(self, dd, _):
         modes = ["static", "breathing", "wave", "cycle"]

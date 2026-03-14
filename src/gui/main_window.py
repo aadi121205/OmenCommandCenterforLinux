@@ -5,9 +5,7 @@ Sidebar navigation ile 5 sekme + ayarlar.
 """
 import sys, os, json, fcntl
 
-# --- SINGLE INSTANCE HANDLING ---
-# We rely on Gtk.Application (D-Bus) for single instance management.
-# Launching the app again will trigger the 'activate' signal on the existing process.
+# Single-instance handling is managed by Adw.Application below via DBus.
 
 try:
     import tomllib  # Python 3.11+
@@ -51,6 +49,7 @@ from pages.lighting_page import LightingPage
 from pages.mux_page import MUXPage
 from pages.settings_page import SettingsPage
 from pages.dashboard_page import DashboardPage
+from pages.keyboard_page import KeyboardPage
 
 APP_VERSION = "1.1.2"
 CONFIG_FILE = os.path.expanduser("~/.config/hp-manager.toml")
@@ -816,6 +815,7 @@ class HPManagerWindow(Gtk.ApplicationWindow):
             ("dashboard", T("dashboard"), "view-grid-symbolic"),
             ("fan", T("fan"), "weather-tornado-symbolic"),
             ("lighting", T("lighting"), "weather-clear-night-symbolic"),
+            ("keyboard", T("keyboard"), "input-keyboard-symbolic"),
             ("mux", "MUX", "video-display-symbolic"),
         ]
 
@@ -854,6 +854,7 @@ class HPManagerWindow(Gtk.ApplicationWindow):
         self.tools_page = ToolsPage(service=self.service)
         self.fan_page = FanPage(service=self.service)
         self.lighting_page = LightingPage(service=self.service)
+        self.keyboard_page = KeyboardPage(service=self.service)
         self.mux_page = MUXPage(service=self.service)
         self.settings_page = SettingsPage(
             on_theme_change=self._on_theme_change,
@@ -866,6 +867,7 @@ class HPManagerWindow(Gtk.ApplicationWindow):
         self.stack.add_named(self.tools_page, "tools")
         self.stack.add_named(self.fan_page, "fan")
         self.stack.add_named(self.lighting_page, "lighting")
+        self.stack.add_named(self.keyboard_page, "keyboard")
         self.stack.add_named(self.mux_page, "mux")
         self.stack.add_named(self.settings_page, "settings")
 
@@ -945,6 +947,8 @@ class HPManagerWindow(Gtk.ApplicationWindow):
             self.dashboard_page.set_service(self.service)
             self.fan_page.set_service(self.service)
             self.lighting_page.set_service(self.service)
+            if hasattr(self, 'keyboard_page'):
+                self.keyboard_page.service = self.service
             self.mux_page.set_service(self.service)
 
             print("✓ Daemon bağlantısı kuruldu")
@@ -977,6 +981,7 @@ class HPManagerWindow(Gtk.ApplicationWindow):
             "dashboard": T("dashboard"),
             "games": T("games"), "fan": T("fan"), "lighting": T("lighting"),
             "mux": T("mux"), "tools": T("tools"), "settings": T("settings"),
+            "keyboard": T("keyboard"),
         }
         for pid, lbl in self.nav_labels.items():
             if pid in label_map:
@@ -1075,18 +1080,19 @@ class HPManagerWindow(Gtk.ApplicationWindow):
 class HPManagerApp(Adw.Application):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.win = None
         self.connect('activate', self._on_activate)
 
     def _on_activate(self, app):
-        if not self.win:
-            self.win = HPManagerWindow(application=app)
-        self.win.present()
+        print("Activating application window...", flush=True)
+        win = HPManagerWindow(application=app)
+        win.present()
 
 
 def main():
-    # Use a distinct ID for the GUI to ensure single-instance via D-Bus
-    app = HPManagerApp(application_id="com.yyl.hpmanager.gui")
+    print("Initializing Application...", flush=True)
+    # Use a distinct ID for the GUI to avoid conflict with the daemon service name
+    # and use NON_UNIQUE to ensure it always launches a new instance for now
+    app = HPManagerApp(application_id="com.yyl.hpmanager.gui", flags=Gio.ApplicationFlags.FLAGS_NONE)
     exit_status = app.run(sys.argv)
     sys.exit(exit_status)
 
