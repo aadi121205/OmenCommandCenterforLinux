@@ -8,10 +8,7 @@ from gi.repository import GLib
 from pydbus import SystemBus
 
 # --- PATHS ---
-# hp-rgb-lighting sysfs path (custom DKMS module)
 DRIVER_PATH_CUSTOM = "/sys/devices/platform/hp-rgb-lighting"
-# Fallback: check if the module is loaded via lsmod
-DRIVER_PATH = DRIVER_PATH_CUSTOM
 CONFIG_FILE = "/etc/hp-manager/state.json"
 
 # --- LOGLAMA ---
@@ -24,6 +21,7 @@ VALID_LIGHT_MODES = {"static", "breathing", "cycle", "wave"}
 VALID_DIRECTIONS = {"ltr", "rtl"}
 VALID_GPU_MODES = {"hybrid", "discrete", "integrated"}
 
+
 # ============================================================
 # FAN CONTROLLER
 # ============================================================
@@ -33,24 +31,21 @@ class FanController:
       - fan{1,2}_input  : current RPM (read-only)
       - fan{1,2}_max    : max RPM (read-only)
       - fan{1,2}_target : target RPM (read-write, for manual mode)
-      - pwm1_enable     : global fan mode (0=max, 1=manual, 2=auto) — SINGLE control for ALL fans
+      - pwm1_enable     : global fan mode (0=max, 1=manual, 2=auto)
     """
     def __init__(self):
         self.hwmon_path = self._find_hwmon()
         self.fan_count = 0
         self.found_fans = []
         self.max_speeds = {}
-        self.mode = "auto"  # "auto", "max", "custom"
+        self.mode = "auto"
         if self.hwmon_path:
             self._detect_fans()
             self._read_max_speeds()
             self._read_current_mode()
 
     def _find_hwmon(self):
-        """Find the 'hp' hwmon device.
-        Matches hp-wmi reporting name 'hp'.
-        """
-        import glob
+        """Find the 'hp' hwmon device."""
         for path in glob.glob("/sys/class/hwmon/hwmon*/name"):
             try:
                 with open(path, 'r') as f:
@@ -60,7 +55,6 @@ class FanController:
             except Exception:
                 pass
 
-        # Method 2: Try platform device hwmon symlink
         for platform_name in ("hp-wmi", "hp_wmi"):
             platform_hwmon = f"/sys/devices/platform/{platform_name}/hwmon"
             if os.path.exists(platform_hwmon):
@@ -77,15 +71,12 @@ class FanController:
         return None
 
     def _detect_fans(self):
-        hp = self.hwmon_path
-        if not hp:
+        if not self.hwmon_path:
             return
-        # Find all fan*_input files and extract their indices
-        for f in os.listdir(hp):
+        for f in os.listdir(self.hwmon_path):
             if f.startswith("fan") and f.endswith("_input"):
                 try:
-                    idx = int(f[3:-6])
-                    self.found_fans.append(idx)
+                    self.found_fans.append(int(f[3:-6]))
                 except ValueError:
                     continue
         self.found_fans.sort()
@@ -93,10 +84,10 @@ class FanController:
 
     def _read_max_speeds(self):
         """Read actual max RPMs from driver."""
-        hp = self.hwmon_path
-        if not hp: return
+        if not self.hwmon_path:
+            return
         for i in self.found_fans:
-            max_path = os.path.join(hp, f"fan{i}_max")
+            max_path = os.path.join(self.hwmon_path, f"fan{i}_max")
             try:
                 with open(max_path) as f:
                     self.max_speeds[i] = int(f.read().strip())
@@ -105,37 +96,30 @@ class FanController:
 
     def _read_current_mode(self):
         """Read pwm1_enable to determine current mode."""
-        hp = self.hwmon_path
-        if not hp: return
-        pwm_path = os.path.join(hp, "pwm1_enable")
+        if not self.hwmon_path:
+            return
+        pwm_path = os.path.join(self.hwmon_path, "pwm1_enable")
         try:
             with open(pwm_path) as f:
                 val = int(f.read().strip())
-            if val == 0:
-                self.mode = "max"
-            elif val == 1:
-                self.mode = "custom"
-            else:
-                self.mode = "auto"
+            self.mode = {0: "max", 1: "custom"}.get(val, "auto")
         except Exception:
             self.mode = "auto"
 
     def _sysfs_read(self, filename):
-        hp = self.hwmon_path
-        if not hp: return 0
-        path = os.path.join(hp, filename)
+        if not self.hwmon_path:
+            return 0
         try:
-            with open(path) as f:
+            with open(os.path.join(self.hwmon_path, filename)) as f:
                 return int(f.read().strip())
         except Exception:
             return 0
 
     def _sysfs_write(self, filename, value):
-        hp = self.hwmon_path
-        if not hp: return False
-        path = os.path.join(hp, filename)
+        if not self.hwmon_path:
+            return False
         try:
-            with open(path, "w") as f:
+            with open(os.path.join(self.hwmon_path, filename), "w") as f:
                 f.write(str(value))
             return True
         except Exception as e:
@@ -149,24 +133,18 @@ class FanController:
         return self.max_speeds.get(fan_num, 6000)
 
     def get_current_speed(self, fan_num):
-        if not self.hwmon_path:
-            return 0
         return self._sysfs_read(f"fan{fan_num}_input")
 
     def get_target_speed(self, fan_num):
-        if not self.hwmon_path:
-            return -1
         return self._sysfs_read(f"fan{fan_num}_target")
 
     def set_mode(self, mode):
         """Set fan mode: 'auto' (pwm1_enable=2), 'max' (pwm1_enable=0), 'custom' (pwm1_enable=1)."""
         if not self.hwmon_path:
             return False
-        mode_map = {"auto": 2, "max": 0, "custom": 1}
-        val = mode_map.get(mode)
+        val = {"auto": 2, "max": 0, "custom": 1}.get(mode)
         if val is None:
             return False
-
         ok = self._sysfs_write("pwm1_enable", val)
         if ok:
             self.mode = mode
@@ -174,12 +152,10 @@ class FanController:
         return ok
 
     def set_fan_target(self, fan_num, rpm):
-        """Set target RPM for a specific fan (only effective in manual/custom mode)."""
+        """Set target RPM for a specific fan (only effective in custom mode)."""
         if not self.hwmon_path or fan_num not in self.found_fans:
             return False
-        # Clamp to max
-        max_rpm = self.get_max_speed(fan_num)
-        rpm = max(0, min(rpm, max_rpm))
+        rpm = max(0, min(rpm, self.get_max_speed(fan_num)))
         ok = self._sysfs_write(f"fan{fan_num}_target", rpm)
         if ok:
             logger.info(f"Fan {fan_num} target set to {rpm} RPM")
@@ -189,7 +165,6 @@ class FanController:
         return self.hwmon_path is not None and self.fan_count > 0
 
     def get_mode(self):
-        """Return current mode string."""
         if self.hwmon_path:
             self._read_current_mode()
         return self.mode
@@ -205,23 +180,13 @@ class RGBController:
         self.last_written = [None] * 8
 
     def _find_rgb_path(self):
-        """Find the RGB control sysfs path.
-        Checks the custom hp-rgb-lighting platform device first,
-        then falls back to lsmod to see if the module is loaded.
-        """
-        # Custom DKMS module path
+        """Find the RGB control sysfs path."""
         if os.path.exists(DRIVER_PATH_CUSTOM):
             logger.info(f"RGB: Using custom driver path {DRIVER_PATH_CUSTOM}")
             return DRIVER_PATH_CUSTOM
-
-        # Check if hp_rgb_lighting module is loaded (stock kernel builds may
-        # use a different platform device path or the LED subsystem)
         try:
-            result = subprocess.run(
-                ["lsmod"], capture_output=True, text=True, timeout=5
-            )
+            result = subprocess.run(["lsmod"], capture_output=True, text=True, timeout=5)
             if "hp_rgb_lighting" in result.stdout:
-                # Module is loaded but path might differ
                 for candidate in ("/sys/devices/platform/hp-rgb-lighting",
                                   "/sys/devices/platform/hp_rgb_lighting"):
                     if os.path.exists(candidate):
@@ -229,7 +194,6 @@ class RGBController:
                         return candidate
         except Exception:
             pass
-
         logger.info("RGB: No RGB control path found (hp-rgb-lighting not loaded)")
         return None
 
@@ -237,13 +201,12 @@ class RGBController:
         return self.available
 
     def write_zone(self, zone, hex_color):
-        if not self.available or zone < 0 or zone > 7:
+        if not self.available or not (0 <= zone <= 7):
             return
         if self.last_written[zone] == hex_color:
             return
-        path = f"{self.driver_path}/zone{zone}"
         try:
-            with open(path, "w") as f:
+            with open(f"{self.driver_path}/zone{zone}", "w") as f:
                 f.write(hex_color)
                 f.flush()
             self.last_written[zone] = hex_color
@@ -257,9 +220,8 @@ class RGBController:
     def write_brightness(self, on):
         if not self.available:
             return
-        path = f"{self.driver_path}/brightness"
         try:
-            with open(path, "w") as f:
+            with open(f"{self.driver_path}/brightness", "w") as f:
                 f.write("1" if on else "0")
                 f.flush()
         except Exception:
@@ -268,9 +230,8 @@ class RGBController:
     def write_win_lock(self, locked):
         if not self.available:
             return
-        path = f"{self.driver_path}/win_lock"
         try:
-            with open(path, "w") as f:
+            with open(f"{self.driver_path}/win_lock", "w") as f:
                 f.write("1" if locked else "0")
                 f.flush()
         except Exception:
@@ -278,32 +239,28 @@ class RGBController:
 
 
 # ============================================================
-# POWER PROFILE CONTROLLER (power-profiles-daemon)
+# POWER PROFILE CONTROLLER
 # ============================================================
 class PowerProfileController:
-    PPD_BUS = "net.hadess.PowerProfiles"
-    PPD_PATH = "/net/hadess/PowerProfiles"
-    
+    PPD_BUS   = "net.hadess.PowerProfiles"
+    PPD_PATH  = "/net/hadess/PowerProfiles"
     TUNED_BUS = "com.redhat.tuned"
     TUNED_PATH = "/Tuned"
-    TUNED_IFACE = "com.redhat.tuned.control"
 
     def __init__(self):
-        self.mode = "ppd"  # "ppd" or "tuned"
+        self.mode = "ppd"
         self.available = False
         self.bus = SystemBus()
         self.proxy = None
-        
+
         # Try Tuned first (Fedora default)
         try:
             self.proxy = self.bus.get(self.TUNED_BUS, self.TUNED_PATH)
-            # Verify interface
             self.proxy.active_profile()
             self.mode = "tuned"
             self.available = True
             logger.info("PowerProfileController: Using Tuned backend")
         except Exception:
-            # Fallback to PPD
             try:
                 self.proxy = self.bus.get(self.PPD_BUS, self.PPD_PATH)
                 self.mode = "ppd"
@@ -322,9 +279,7 @@ class PowerProfileController:
                 return [p["Profile"] for p in self.proxy.Profiles]
             except Exception:
                 return ["power-saver", "balanced", "performance"]
-        else:
-            # Tuned
-            return ["power-saver", "balanced", "performance"]
+        return ["power-saver", "balanced", "performance"]
 
     def get_active(self):
         if not self.available:
@@ -332,12 +287,10 @@ class PowerProfileController:
         try:
             if self.mode == "ppd":
                 return self.proxy.ActiveProfile
-            else:
-                # Tuned returns full profile name, we map it back for GUI
-                tp = self.proxy.active_profile()
-                if "powersave" in tp: return "power-saver"
-                if "performance" in tp: return "performance"
-                return "balanced"
+            tp = self.proxy.active_profile()
+            if "powersave" in tp:   return "power-saver"
+            if "performance" in tp: return "performance"
+            return "balanced"
         except Exception:
             return "balanced"
 
@@ -348,14 +301,12 @@ class PowerProfileController:
             if self.mode == "ppd":
                 self.proxy.ActiveProfile = profile
             else:
-                # Map standard GUI profiles to Tuned profiles
                 mapping = {
                     "power-saver": "powersave",
-                    "balanced": "balanced",
-                    "performance": "throughput-performance"
+                    "balanced":    "balanced",
+                    "performance": "throughput-performance",
                 }
-                target = mapping.get(profile, "balanced")
-                self.proxy.switch_profile(target)
+                self.proxy.switch_profile(mapping.get(profile, "balanced"))
             return True
         except Exception as e:
             logger.error(f"Power profile set error ({self.mode}): {e}")
@@ -367,10 +318,10 @@ class PowerProfileController:
 # ============================================================
 class MUXController:
     def __init__(self):
-        self.backend: typing.Optional[str] = None
-        self.envycontrol = shutil.which("envycontrol")
-        self.supergfxctl = shutil.which("supergfxctl")
+        self.envycontrol  = shutil.which("envycontrol")
+        self.supergfxctl  = shutil.which("supergfxctl")
         self.prime_select = shutil.which("prime-select")
+        self.backend: typing.Optional[str] = None
         self._detect_backend()
 
     def _detect_backend(self):
@@ -380,8 +331,6 @@ class MUXController:
             self.backend = "supergfxctl"
         elif self.prime_select:
             self.backend = "prime-select"
-        else:
-            self.backend = None
 
     def is_available(self):
         return self.backend is not None
@@ -392,14 +341,14 @@ class MUXController:
     def get_mode(self):
         try:
             if self.backend == "envycontrol" and self.envycontrol:
-                r = subprocess.check_output([str(self.envycontrol), "--query"], stderr=subprocess.STDOUT, timeout=5).decode().strip()
-                return r.lower()
+                return subprocess.check_output([self.envycontrol, "--query"],
+                                               stderr=subprocess.STDOUT, timeout=5).decode().strip().lower()
             elif self.backend == "supergfxctl" and self.supergfxctl:
-                r = subprocess.check_output([str(self.supergfxctl), "-g"], stderr=subprocess.STDOUT, timeout=5).decode().strip()
-                return r.lower()
+                return subprocess.check_output([self.supergfxctl, "-g"],
+                                               stderr=subprocess.STDOUT, timeout=5).decode().strip().lower()
             elif self.backend == "prime-select" and self.prime_select:
-                r = subprocess.check_output([str(self.prime_select), "query"], stderr=subprocess.STDOUT, timeout=5).decode().strip()
-                return r.lower()
+                return subprocess.check_output([self.prime_select, "query"],
+                                               stderr=subprocess.STDOUT, timeout=5).decode().strip().lower()
         except Exception:
             pass
         return "unknown"
@@ -407,15 +356,15 @@ class MUXController:
     def set_mode(self, mode):
         try:
             if self.backend == "envycontrol" and self.envycontrol:
-                subprocess.run([str(self.envycontrol), "-s", mode], check=True, timeout=10)
+                subprocess.run([self.envycontrol, "-s", mode], check=True, timeout=10)
                 return "OK"
             elif self.backend == "supergfxctl" and self.supergfxctl:
-                mode_map = {"hybrid": "Hybrid", "discrete": "Dedicated", "integrated": "Integrated"}
-                subprocess.run([str(self.supergfxctl), "-m", str(mode_map.get(mode, mode))], check=True, timeout=10)
+                m = {"hybrid": "Hybrid", "discrete": "Dedicated", "integrated": "Integrated"}.get(mode, mode)
+                subprocess.run([self.supergfxctl, "-m", m], check=True, timeout=10)
                 return "OK"
             elif self.backend == "prime-select" and self.prime_select:
-                mode_map = {"hybrid": "on-demand", "discrete": "nvidia", "integrated": "intel"}
-                subprocess.run([str(self.prime_select), str(mode_map.get(mode, mode))], check=True, timeout=10)
+                m = {"hybrid": "on-demand", "discrete": "nvidia", "integrated": "intel"}.get(mode, mode)
+                subprocess.run([self.prime_select, m], check=True, timeout=10)
                 return "OK"
         except Exception as e:
             return f"Error: {e}"
@@ -426,6 +375,8 @@ class MUXController:
 # ANIMATION ENGINE
 # ============================================================
 class AnimationEngine(threading.Thread):
+    FRAME_TIME = 0.05  # 20 fps
+
     def __init__(self, rgb_ctrl):
         super().__init__(daemon=True)
         self.rgb = rgb_ctrl
@@ -436,15 +387,12 @@ class AnimationEngine(threading.Thread):
         while self.running:
             loop_start = time.time()
             with lock:
-                pwr: bool = bool(state.get("power", True))
-                mode: str = str(state.get("mode", "static"))
-                bri_v = state.get("brightness", 100)
-                bri: float = float(bri_v if isinstance(bri_v, (int, float)) else 100) / 100.0
-                spd_v = state.get("speed", 50)
-                spd: float = float(spd_v if isinstance(spd_v, (int, float)) else 50)
-                cols_v = state.get("colors", ["FF0000"] * 8)
-                cols: typing.List[str] = [str(c) for c in cols_v] if isinstance(cols_v, list) else ["FF0000"] * 8
-                d: str = str(state.get("direction", "ltr"))
+                pwr  = bool(state.get("power", True))
+                mode = str(state.get("mode", "static"))
+                bri  = float(state.get("brightness", 100)) / 100.0
+                spd  = float(state.get("speed", 50))
+                cols = [str(c) for c in state.get("colors", ["FF0000"] * 8)]
+                d    = str(state.get("direction", "ltr"))
 
             if not pwr:
                 self.rgb.write_brightness(False)
@@ -455,51 +403,41 @@ class AnimationEngine(threading.Thread):
             self.rgb.write_brightness(True)
             t = time.time()
             targets = []
-            
-            # Use 20fps for animations (50ms) to save CPU/WMI calls
-            FRAME_TIME = 0.05
 
             if mode == "static":
                 targets = [self._hex_to_rgb(c) for c in cols]
             elif mode == "breathing":
                 period = 8.0 - (spd * 0.06)
-                phase_0_1 = (math.sin(2 * math.pi * t / period) + 1) / 2
-                phase = 0.1 + (0.9 * phase_0_1)
-                base = self._hex_to_rgb(cols[0])
+                phase  = 0.1 + 0.9 * ((math.sin(2 * math.pi * t / period) + 1) / 2)
+                base   = self._hex_to_rgb(cols[0])
                 targets = [(int(base[0] * phase), int(base[1] * phase), int(base[2] * phase))] * 8
             elif mode == "cycle":
                 hue = (t * (spd * 0.003)) % 1.0
                 r, g, b = colorsys.hsv_to_rgb(hue, 1.0, 1.0)
                 targets = [(int(r * 255), int(g * 255), int(b * 255))] * 8
             elif mode == "wave":
-                speed_factor = spd * 0.007
                 for i in range(8):
                     offset = (i * 0.15) if d == "ltr" else ((7 - i) * 0.15)
-                    hue = (t * speed_factor + offset) % 1.0
-                    r, g, b = colorsys.hsv_to_rgb(hue, 1.0, 1.0)
+                    r, g, b = colorsys.hsv_to_rgb((t * spd * 0.007 + offset) % 1.0, 1.0, 1.0)
                     targets.append((int(r * 255), int(g * 255), int(b * 255)))
 
-            final = []
-            for r, g, b in targets:
-                final.append(f"{int(r * bri):02X}{int(g * bri):02X}{int(b * bri):02X}")
-            self.rgb.write_all(final)
+            self.rgb.write_all([
+                f"{int(r * bri):02X}{int(g * bri):02X}{int(b * bri):02X}"
+                for r, g, b in targets
+            ])
 
-            if mode == "static":
-                time.sleep(0.5)
-            else:
-                elapsed = time.time() - loop_start
-                # Targeting 20fps
-                time.sleep(max(FRAME_TIME - elapsed, 0.001))
+            sleep = 0.5 if mode == "static" else max(self.FRAME_TIME - (time.time() - loop_start), 0.001)
+            time.sleep(sleep)
 
     def _hex_to_rgb(self, h):
         h = str(h).lstrip("#")
         if not h or len(h) < 6:
-            logger.warning(f"Invalid hex color received: {h}, falling back to red")
+            logger.warning(f"Invalid hex color: '{h}', falling back to red")
             return (255, 0, 0)
         try:
             return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
         except ValueError as e:
-            logger.error(f"Hex conversion error for {h}: {e}")
+            logger.error(f"Hex conversion error for '{h}': {e}")
             return (255, 0, 0)
 
 
@@ -507,32 +445,32 @@ class AnimationEngine(threading.Thread):
 # STATE
 # ============================================================
 state: typing.Dict[str, typing.Any] = {
-    "mode": "static",
-    "colors": ["FF0000"] * 8,
-    "speed": 50,
-    "brightness": 100,
-    "direction": "ltr",
-    "power": True,
-    "fan_mode": "auto",
+    "mode":          "static",
+    "colors":        ["FF0000"] * 8,
+    "speed":         50,
+    "brightness":    100,
+    "direction":     "ltr",
+    "power":         True,
+    "fan_mode":      "auto",
     "power_profile": "balanced",
-    "win_lock": False,
-    "prtsc_fix": False,
-    "f1_fix": False,
+    "win_lock":      False,
+    "prtsc_fix":     False,
+    "f1_fix":        False,
 }
 
 ALLOWED_PACKAGES = {
-    "steam": "com.valvesoftware.Steam",
-    "lutris": "net.lutris.Lutris",
+    "steam":       "com.valvesoftware.Steam",
+    "lutris":      "net.lutris.Lutris",
     "protonup-qt": "net.davidotek.pupgui2",
-    "heroic": "com.heroicgameslauncher.hgl",
-    "mangohud": "org.freedesktop.Platform.VulkanLayer.MangoHud",
+    "heroic":      "com.heroicgameslauncher.hgl",
+    "mangohud":    "org.freedesktop.Platform.VulkanLayer.MangoHud",
 }
 
-fan_ctrl = FanController()
-rgb_ctrl = RGBController()
+fan_ctrl   = FanController()
+rgb_ctrl   = RGBController()
 power_ctrl = PowerProfileController()
-mux_ctrl = MUXController()
-engine = AnimationEngine(rgb_ctrl)
+mux_ctrl   = MUXController()
+engine     = AnimationEngine(rgb_ctrl)
 
 
 def save_state():
@@ -553,68 +491,63 @@ def save_state():
 def load_state():
     with lock:
         try:
-            if os.path.exists(CONFIG_FILE):
-                with open(CONFIG_FILE) as f:
-                    loaded = json.load(f)
-                if isinstance(loaded, dict):
-                    if loaded.get("mode") in VALID_LIGHT_MODES:
-                        state["mode"] = loaded["mode"]
-                    colors = loaded.get("colors")
-                    if isinstance(colors, list):
-                        cleaned: typing.List[str] = []
-                        for i, c in enumerate(colors):
-                            if i >= 8:
-                                break
-                            c_str = str(c).lstrip("#").upper()
-                            if HEX_COLOR_RE.match(c_str):
-                                cleaned.append(c_str)
-                        if cleaned:
-                            curr = state.get("colors")
-                            c0 = str(curr[0]) if isinstance(curr, list) and len(curr) > 0 else "FF0000"
-                            new_colors = []
-                            for c in cleaned:
-                                if len(new_colors) < 8:
-                                    new_colors.append(c)
-                            while len(new_colors) < 8:
-                                new_colors.append(c0)
-                            state["colors"] = new_colors
-                    speed = loaded.get("speed")
-                    if isinstance(speed, int):
-                        state["speed"] = max(1, min(speed, 100))
-                    brightness = loaded.get("brightness")
-                    if isinstance(brightness, int):
-                        state["brightness"] = max(0, min(brightness, 100))
-                    if loaded.get("direction") in VALID_DIRECTIONS:
-                        state["direction"] = loaded["direction"]
-                    if isinstance(loaded.get("power"), bool):
-                        state["power"] = loaded["power"]
-                    # Restore fan mode
-                    fm = loaded.get("fan_mode")
-                    if fm in ("auto", "max", "custom"):
-                        state["fan_mode"] = fm
-                    # Restore power profile
-                    pp = loaded.get("power_profile")
-                    if isinstance(pp, str) and pp in ("power-saver", "balanced", "performance"):
-                        state["power_profile"] = pp
-                    # Restore Keyboard Fixes
-                    if isinstance(loaded.get("prtsc_fix"), bool):
-                        state["prtsc_fix"] = loaded["prtsc_fix"]
-                    if isinstance(loaded.get("f1_fix"), bool):
-                        state["f1_fix"] = loaded["f1_fix"]
-        except Exception:
-            pass
+            if not os.path.exists(CONFIG_FILE):
+                return
+            with open(CONFIG_FILE) as f:
+                loaded = json.load(f)
+            if not isinstance(loaded, dict):
+                return
 
+            if loaded.get("mode") in VALID_LIGHT_MODES:
+                state["mode"] = loaded["mode"]
 
-def _find_hwmon_by_name(name):
-    """Utility to find a hwmon device by name (e.g. coretemp, k10temp)."""
-    for d in sorted(glob.glob("/sys/class/hwmon/hwmon*")):
-        try:
-            with open(os.path.join(d, "name")) as f:
-                if f.read().strip() == name:
-                    return d
-        except Exception:
-            pass
-    return None
+            colors = loaded.get("colors")
+            if isinstance(colors, list):
+                cleaned: typing.List[str] = []
+                for i, c in enumerate(colors):
+                    if i >= 8:
+                        break
+                    c_str = str(c).lstrip("#").upper()
+                    if HEX_COLOR_RE.match(c_str):
+                        cleaned.append(c_str)
+                if cleaned:
+                    c0 = cleaned[0]
+                    state["colors"] = (cleaned + [c0] * 8)[:8]
+
+            speed = loaded.get("speed")
+            if isinstance(speed, int):
+                state["speed"] = max(1, min(speed, 100))
+
+            brightness = loaded.get("brightness")
+            if isinstance(brightness, int):
+                state["brightness"] = max(0, min(brightness, 100))
+
+            if loaded.get("direction") in VALID_DIRECTIONS:
+                state["direction"] = loaded["direction"]
+
+            if isinstance(loaded.get("power"), bool):
+                state["power"] = loaded["power"]
+
+            fm = loaded.get("fan_mode")
+            if fm in ("auto", "max", "custom"):
+                state["fan_mode"] = fm
+
+            pp = loaded.get("power_profile")
+            if isinstance(pp, str) and pp in ("power-saver", "balanced", "performance"):
+                state["power_profile"] = pp
+
+            # --- Keyboard fixes ---
+            if isinstance(loaded.get("prtsc_fix"), bool):
+                state["prtsc_fix"] = loaded["prtsc_fix"]
+            if isinstance(loaded.get("f1_fix"), bool):
+                state["f1_fix"] = loaded["f1_fix"]
+
+            # --- Win lock (FIX: was missing in previous version) ---
+            if isinstance(loaded.get("win_lock"), bool):
+                state["win_lock"] = loaded["win_lock"]
+
+        except Exception as e:
+            logger.error(f"State load error: {e}")
 
 
 # ============================================================
@@ -649,7 +582,7 @@ class HPManagerService(object):
         if not HEX_COLOR_RE.match(c):
             return "FAIL"
         with lock:
-            state["mode"] = "static"
+            state["mode"]  = "static"
             state["power"] = True
             if z == 8:
                 state["colors"] = [c] * 8
@@ -664,7 +597,7 @@ class HPManagerService(object):
         if m not in VALID_LIGHT_MODES:
             return "FAIL"
         with lock:
-            state["mode"] = m
+            state["mode"]  = m
             state["speed"] = max(1, min(int(s), 100))
             state["power"] = True
         save_state()
@@ -674,9 +607,9 @@ class HPManagerService(object):
         if d not in VALID_DIRECTIONS:
             return "FAIL"
         with lock:
-            state["power"] = bool(p)
+            state["power"]      = bool(p)
             state["brightness"] = max(0, min(int(b), 100))
-            state["direction"] = d
+            state["direction"]  = d
         save_state()
         return "OK"
 
@@ -697,25 +630,23 @@ class HPManagerService(object):
     def SetFanTarget(self, fan, rpm):
         """Set target RPM for a specific fan (in custom mode)."""
         logger.info(f"SetFanTarget: fan={fan}, rpm={rpm}")
-        ok = fan_ctrl.set_fan_target(fan, rpm)
-        return "OK" if ok else "FAIL"
+        return "OK" if fan_ctrl.set_fan_target(fan, rpm) else "FAIL"
 
     def GetFanInfo(self):
-        fans_data = {}
-        # Iterate over explicitly found fans instead of a fixed range
-        for i in fan_ctrl.found_fans:
-            fans_data[str(i)] = {
+        fans_data = {
+            str(i): {
                 "current": fan_ctrl.get_current_speed(i),
-                "max": fan_ctrl.get_max_speed(i),
-                "target": fan_ctrl.get_target_speed(i),
+                "max":     fan_ctrl.get_max_speed(i),
+                "target":  fan_ctrl.get_target_speed(i),
             }
-        info = {
-            "available": fan_ctrl.is_available(),
-            "fan_count": fan_ctrl.get_fan_count(),
-            "mode": fan_ctrl.get_mode(),
-            "fans": fans_data
+            for i in fan_ctrl.found_fans
         }
-        return json.dumps(info)
+        return json.dumps({
+            "available":  fan_ctrl.is_available(),
+            "fan_count":  fan_ctrl.get_fan_count(),
+            "mode":       fan_ctrl.get_mode(),
+            "fans":       fans_data,
+        })
 
     def SetPowerProfile(self, profile):
         if profile not in power_ctrl.get_profiles():
@@ -730,8 +661,8 @@ class HPManagerService(object):
     def GetPowerProfile(self):
         return json.dumps({
             "available": power_ctrl.available,
-            "active": power_ctrl.get_active(),
-            "profiles": power_ctrl.get_profiles()
+            "active":    power_ctrl.get_active(),
+            "profiles":  power_ctrl.get_profiles(),
         })
 
     def SetGpuMode(self, mode):
@@ -742,80 +673,102 @@ class HPManagerService(object):
     def GetGpuInfo(self):
         return json.dumps({
             "available": mux_ctrl.is_available(),
-            "backend": mux_ctrl.get_backend(),
-            "mode": mux_ctrl.get_mode()
+            "backend":   mux_ctrl.get_backend(),
+            "mode":      mux_ctrl.get_mode(),
         })
 
     def GetSystemInfo(self):
-        si = state.get("_system_info_cache")
         now = time.time()
+        si  = state.get("_system_info_cache")
         if si and (now - state.get("_system_info_last", 0) < 10):
-             si["cpu_temp"] = self._get_cached_cpu_temp()
-             si["gpu_temp"] = self._get_cached_gpu_temp()
-             return json.dumps(si)
+            si["cpu_temp"] = self._get_cached_cpu_temp()
+            si["gpu_temp"] = self._get_cached_gpu_temp()
+            return json.dumps(si)
+
         info = {
-            "hostname": platform.node(), "kernel": platform.release(),
-            "os_name": "Linux", "cpu_temp": self._get_cached_cpu_temp(),
-            "gpu_temp": self._get_cached_gpu_temp(), "product_name": "HP Laptop"
+            "hostname":     platform.node(),
+            "kernel":       platform.release(),
+            "os_name":      "Linux",
+            "cpu_temp":     self._get_cached_cpu_temp(),
+            "gpu_temp":     self._get_cached_gpu_temp(),
+            "product_name": "HP Laptop",
         }
-        for dmi_file in ("/sys/devices/virtual/dmi/id/product_name", "/sys/devices/virtual/dmi/id/product_family"):
+        for dmi_file in ("/sys/devices/virtual/dmi/id/product_name",
+                         "/sys/devices/virtual/dmi/id/product_family"):
             if os.path.exists(dmi_file):
                 try:
                     with open(dmi_file) as f:
-                        info["product_name"] = f.read().strip(); break
-                except: pass
+                        info["product_name"] = f.read().strip()
+                    break
+                except Exception:
+                    pass
+
         state["_system_info_cache"] = info
-        state["_system_info_last"] = now
+        state["_system_info_last"]  = now
         return json.dumps(info)
 
     def _get_cached_cpu_temp(self):
         best_t, best_score = 0.0, -1000
-        RANK_DRV = {"zenpower": 100, "coretemp": 90, "k10temp": 90, "cpu_thermal": 80, "hp_wmi": 60, "acpitz": 30}
+        RANK_DRV = {"zenpower": 100, "coretemp": 90, "k10temp": 90,
+                    "cpu_thermal": 80, "hp_wmi": 60, "acpitz": 30}
         RANK_LBL = {"tdie": 100, "package id 0": 95, "tctl": 90, "core": 80, "composite": 50}
         try:
             for d in os.listdir("/sys/class/hwmon"):
                 path = os.path.join("/sys/class/hwmon", d)
                 try:
-                    with open(os.path.join(path, "name")) as f: drv = f.read().strip().lower()
-                except: continue
+                    with open(os.path.join(path, "name")) as f:
+                        drv = f.read().strip().lower()
+                except Exception:
+                    continue
                 d_score = RANK_DRV.get(drv, 10)
                 for tf in glob.glob(os.path.join(path, "temp*_input")):
                     try:
-                        with open(tf) as f: t = int(f.read().strip()) / 1000.0
-                        if t <= 0 or t > 125: continue
+                        with open(tf) as f:
+                            t = int(f.read().strip()) / 1000.0
+                        if not (0 < t <= 125):
+                            continue
                         label = ""
                         lp = tf.replace("_input", "_label")
                         if os.path.exists(lp):
-                            with open(lp) as f: label = f.read().strip().lower()
-                        l_score = 0
-                        for k, v in RANK_LBL.items():
-                            if label and (k in str(label)): l_score = max(l_score, v)
-                        score = d_score + l_score
-                        if t == 75.0 or t == 0.0: score -= 500
-                        if score > best_score: best_score, best_t = score, t
-                    except: pass
-        except: pass
+                            with open(lp) as f:
+                                label = f.read().strip().lower()
+                        l_score = max((v for k, v in RANK_LBL.items() if k in label), default=0)
+                        score   = d_score + l_score - (500 if t in (75.0, 0.0) else 0)
+                        if score > best_score:
+                            best_score, best_t = score, t
+                    except Exception:
+                        pass
+        except Exception:
+            pass
         return best_t
 
     def _get_cached_gpu_temp(self):
         if shutil.which("nvidia-smi"):
             try:
-                out = subprocess.check_output(["nvidia-smi", "--query-gpu=temperature.gpu", "--format=csv,noheader,nounits"], stderr=subprocess.DEVNULL, timeout=2).decode().strip()
+                out = subprocess.check_output(
+                    ["nvidia-smi", "--query-gpu=temperature.gpu", "--format=csv,noheader,nounits"],
+                    stderr=subprocess.DEVNULL, timeout=2
+                ).decode().strip()
                 return float(out)
-            except: pass
+            except Exception:
+                pass
         try:
             for d in os.listdir("/sys/class/hwmon"):
                 path = os.path.join("/sys/class/hwmon", d)
                 try:
-                    with open(os.path.join(path, "name")) as f: name = f.read().strip().lower()
+                    with open(os.path.join(path, "name")) as f:
+                        name = f.read().strip().lower()
                     if name in ("amdgpu", "i915"):
-                        with open(os.path.join(path, "temp1_input")) as f: return int(f.read().strip()) / 1000.0
-                except: continue
-        except: pass
+                        with open(os.path.join(path, "temp1_input")) as f:
+                            return int(f.read().strip()) / 1000.0
+                except Exception:
+                    continue
+        except Exception:
+            pass
         return "NOT_REACHABLE"
 
     def CleanMemory(self):
-        """Clear pagecache, dentries, and inodes securely as root."""
+        """Clear pagecache, dentries, and inodes as root."""
         try:
             subprocess.run(["sync"], check=True, timeout=5)
             with open("/proc/sys/vm/drop_caches", "w") as f:
@@ -825,12 +778,10 @@ class HPManagerService(object):
             return f"Error: {e}"
 
     def InstallPackage(self, pkg):
-        """Install only known gaming packages with a fixed mapping."""
-        pkg = str(pkg).strip().lower()
-        flatpak_id = ALLOWED_PACKAGES.get(pkg)
+        """Install only whitelisted gaming packages via Flatpak."""
+        flatpak_id = ALLOWED_PACKAGES.get(str(pkg).strip().lower())
         if not flatpak_id:
             return "Error: package_not_allowed"
-
         if shutil.which("flatpak"):
             try:
                 subprocess.run(
@@ -840,7 +791,6 @@ class HPManagerService(object):
                 return "OK"
             except Exception:
                 return "Error: flatpak_install_failed"
-
         return "No supported package manager found"
 
     def SetWinLock(self, locked):
@@ -852,46 +802,42 @@ class HPManagerService(object):
         return "OK"
 
     def SetKeyboardFixes(self, prtsc, f1):
-        """Apply/Update persistent hwdb rules for keyboard scancodes."""
+        """Apply/update persistent hwdb rules for keyboard scancodes."""
         logger.info(f"SetKeyboardFixes: prtsc={prtsc}, f1={f1}")
         with lock:
             state["prtsc_fix"] = bool(prtsc)
-            state["f1_fix"] = bool(f1)
-        
+            state["f1_fix"]    = bool(f1)
         self._write_hwdb_rules(prtsc, f1)
         save_state()
         return "OK"
 
     def _write_hwdb_rules(self, prtsc, f1):
         hwdb_path = "/etc/udev/hwdb.d/90-hp-keyboard-fixes.hwdb"
-        
+
         if not prtsc and not f1:
             if os.path.exists(hwdb_path):
                 try:
                     os.remove(hwdb_path)
                     subprocess.run(["systemd-hwdb", "update"], capture_output=True)
                     subprocess.run(["udevadm", "trigger", "-s", "input"], capture_output=True)
-                except: pass
+                except Exception:
+                    pass
             return
 
-        # Matches most HP laptops using AT keyboard
-        header = "# HP Keyboard Fixes - Generated by HP Laptop Manager\nevdev:atkbd:dmi:bvn*:bvr*:bd*:svnHP*:pn*:*"
-        content = [header]
-        
-        # Scancode b7 (PrtSc) -> sysrq (standard print screen)
+        content = [
+            "# HP Keyboard Fixes - Generated by HP Laptop Manager",
+            "evdev:atkbd:dmi:bvn*:bvr*:bd*:svnHP*:pn*:*",
+        ]
         if prtsc:
-            content.append(" KEYBOARD_KEY_b7=sysrq")
-            
-        # Scancode ab (Presentation) -> f1 (standard F1)
+            content.append(" KEYBOARD_KEY_b7=sysrq")   # PrtSc -> SysRq
         if f1:
-            content.append(" KEYBOARD_KEY_ab=f1")
+            content.append(" KEYBOARD_KEY_ab=f1")       # Presentation key -> F1
 
         try:
             os.makedirs(os.path.dirname(hwdb_path), exist_ok=True)
             with open(hwdb_path, "w") as f:
                 f.write("\n".join(content) + "\n")
-            
-            # Apply changes in a background thread to not block D-Bus
+
             def _apply():
                 try:
                     subprocess.run(["systemd-hwdb", "update"], check=True)
@@ -899,12 +845,15 @@ class HPManagerService(object):
                     logger.info("Keyboard fixes applied via hwdb successfully")
                 except Exception as e:
                     logger.error(f"Failed to apply hwdb: {e}")
-            
+
             threading.Thread(target=_apply, daemon=True).start()
         except Exception as e:
             logger.error(f"Failed to write hwdb rules: {e}")
 
 
+# ============================================================
+# MAIN
+# ============================================================
 def main():
     if os.geteuid() != 0:
         print("Root yetkisi gerekli (sudo).")
@@ -912,34 +861,31 @@ def main():
 
     load_state()
 
-    # Restore fan mode from last session
+    # Restore fan mode
     if fan_ctrl.is_available():
         saved_fan = state.get("fan_mode", "auto")
-        # Custom mode requires RPM targets which aren't persisted;
-        # fall back to auto to prevent fans running at 0 RPM.
         if saved_fan == "custom":
             saved_fan = "auto"
             state["fan_mode"] = "auto"
             logger.warning("Custom fan mode not restorable (no saved targets), falling back to auto")
         if saved_fan in ("auto", "max"):
             ok = fan_ctrl.set_mode(saved_fan)
-            logger.info(f"Restored fan mode '{saved_fan}' from saved state (success={ok})")
+            logger.info(f"Restored fan mode '{saved_fan}' (success={ok})")
 
-    # Restore power profile from last session
+    # Restore power profile
     if power_ctrl.available:
         saved_pp = state.get("power_profile", "balanced")
         if saved_pp in power_ctrl.get_profiles():
             ok = power_ctrl.set_profile(saved_pp)
-            logger.info(f"Restored power profile '{saved_pp}' from saved state (success={ok})")
+            logger.info(f"Restored power profile '{saved_pp}' (success={ok})")
 
-    # Restore Keyboard Fixes from last session (apply hwdb)
+    service = HPManagerService()
+
+    # Restore keyboard fixes
     if state.get("prtsc_fix") or state.get("f1_fix"):
-        # We don't call the full _write_hwdb_rules here because it triggers udevadm.
-        # Just ensure the file exists and let the service handle it, 
-        # but to be safe we call the helper once.
-        # Since udevadm trigger can be slow, we do it in background.
-        HPManagerService().SetKeyboardFixes(state.get("prtsc_fix"), state.get("f1_fix"))
+        service.SetKeyboardFixes(state.get("prtsc_fix"), state.get("f1_fix"))
 
+    # Restore RGB / win-lock
     if rgb_ctrl.is_available():
         rgb_ctrl.write_win_lock(state.get("win_lock", False))
         engine.start()
@@ -947,7 +893,7 @@ def main():
 
     try:
         bus = SystemBus()
-        bus.publish("com.yyl.hpmanager", HPManagerService())
+        bus.publish("com.yyl.hpmanager", service)
         logger.info("HP Manager Daemon ready on D-Bus")
         if fan_ctrl.is_available():
             logger.info(f"Fan control active: {fan_ctrl.get_fan_count()} fans")
