@@ -44,7 +44,7 @@ class LightingPage(Gtk.Box):
         self.set_margin_bottom(30)
 
         self.model_type = _detect_model_type()
-        self.num_zones = 1 if self.model_type == "victus" else 8
+        self.num_zones = 1 if self.model_type == "victus" else 4
 
         self.power = True
         self.mode = "static"
@@ -54,7 +54,7 @@ class LightingPage(Gtk.Box):
         self.zone_rgba = [Gdk.RGBA() for _ in range(8)]
         for c in self.zone_rgba:
             c.parse("red")
-        self.selected_zone = 8 if self.num_zones == 8 else 0
+        self.selected_zone = 4 if self.num_zones == 4 else 0
 
         self._speed_timer = None
         self._bri_timer = None
@@ -143,10 +143,10 @@ class LightingPage(Gtk.Box):
         content.append(preview_frame)
 
         # Zone Selection (Omen only)
-        if self.num_zones == 8:
+        if self.num_zones == 4:
             zone_box = Gtk.Box(spacing=8, halign=Gtk.Align.CENTER)
             self.zone_group = None
-            zones = [f"{T('zone')} {i+1}" for i in range(8)] + [T("all_zones")]
+            zones = [f"{T('zone')} {i+1}" for i in range(4)] + [T("all_zones")]
             for i, label in enumerate(zones):
                 btn = Gtk.ToggleButton(label=label)
                 btn.add_css_class("zone-btn")
@@ -154,7 +154,7 @@ class LightingPage(Gtk.Box):
                     btn.set_group(self.zone_group)
                 else:
                     self.zone_group = btn
-                if i == 8:
+                if i == 4:
                     btn.set_active(True)
                 btn.connect("toggled", lambda w, idx=i: self._on_zone_select(idx) if w.get_active() else None)
                 zone_box.append(btn)
@@ -281,10 +281,11 @@ class LightingPage(Gtk.Box):
                 try: self.service.SetMode("static", self.speed)
                 except Exception: pass
 
-        if self.num_zones == 1 or self.selected_zone == 8:
+        if self.num_zones == 1 or self.selected_zone == 4:
             for i in range(8):
                 self.zone_rgba[i] = c
-                self.kb_preview.set_zone_color(i, c.red, c.green, c.blue)
+                if i < 4:
+                    self.kb_preview.set_zone_color(i, c.red, c.green, c.blue)
             if self.service:
                 try:
                     self.service.SetColor(8, hex_color)
