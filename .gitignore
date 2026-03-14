@@ -1,11 +1,19 @@
+# Python
 __pycache__/
-*.pyc
-.DS_Store
-*.swp
-*.bak
-.context/
+*.py[cod]
+*$py.class
+.venv/
+env/
+venv/
+ENV/
 
-# Kernel build artifacts
+# OS
+.DS_Store
+.directory
+.swp
+*.bak
+
+# Kernel / Build
 *.o
 *.ko
 *.mod
@@ -19,3 +27,8 @@ Module.symvers
 *.tar.gz
 build.log
 dkms.conf.auto
+dkms.conf.full
+
+# Project specifics
+.context/
+LaptopManagerForHP/

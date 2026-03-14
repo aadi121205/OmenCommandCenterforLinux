@@ -1,5 +1,5 @@
 
- # HP Laptop Manager (Linux) v1.1.1 #
+ # HP Laptop Manager (Linux) v1.1.2 #
 <p align="center">
   <img src="images/hplogolight.png" alt="Logo" width="250">
 
@@ -21,6 +21,11 @@
 </p>
 
 **HP Laptop Manager** is a native Linux application designed to unlock the full potential of HP Omen and Victus series laptops. It serves as an open-source alternative to the official OMEN Gaming Hub, providing essential controls in a modern, user-friendly interface.
+
+**New in v1.1.2:**
+
+- ⚡ **Interactive Power Manager Selection**: During installation, users can now choose between `power-profiles-daemon`, `ppd-tuned` (recommended for Fedora), `TLP`, or `auto-cpufreq`.
+- 🔋 **Enhanced Conflict Detection**: Integrated links to TLP and auto-cpufreq repositories for better user guidance during dependency installation.
 
 **New in v1.1.1:**
 
