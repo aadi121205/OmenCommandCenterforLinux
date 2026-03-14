@@ -255,7 +255,7 @@ LAUNCHER
     mkdir -p /usr/share/applications
     
     cp data/com.yyl.hpmanager.conf /etc/dbus-1/system.d/
-    cp data/com.yyl.hpmanager.service /etc/systemd/system/hp-manager.service
+    cp data/com.yyl.hpmanager.service /etc/systemd/system/com.yyl.hpmanager.service
     cp data/com.yyl.hpmanager.policy /usr/share/polkit-1/actions/
     cp data/com.yyl.hpmanager.desktop /usr/share/applications/
     
@@ -276,9 +276,9 @@ LAUNCHER
     echo "hp-rgb-lighting" > "$MODULES_LOAD_FILE"
 
     systemctl daemon-reload
-    systemctl enable hp-manager.service
+    systemctl enable com.yyl.hpmanager.service
     systemctl enable hp-omen-key.service 2>/dev/null || true
-    systemctl restart hp-manager.service || warn "Daemon failed to start."
+    systemctl restart com.yyl.hpmanager.service || warn "Daemon failed to start."
     systemctl restart hp-omen-key.service 2>/dev/null || true
 
     # Unified Uninstaller Link
@@ -296,14 +296,15 @@ do_uninstall() {
     check_root
     info "$(msg uninstalling)"
     
-    systemctl stop hp-manager.service 2>/dev/null || true
-    systemctl disable hp-manager.service 2>/dev/null || true
+    systemctl stop hp-manager.service com.yyl.hpmanager.service 2>/dev/null || true
+    systemctl disable hp-manager.service com.yyl.hpmanager.service 2>/dev/null || true
     systemctl stop hp-omen-key.service 2>/dev/null || true
     systemctl disable hp-omen-key.service 2>/dev/null || true
     
     manage_driver "uninstall"
 
     rm -f /etc/systemd/system/hp-manager.service
+    rm -f /etc/systemd/system/com.yyl.hpmanager.service
     rm -f /etc/systemd/system/hp-omen-key.service
     rm -f "$BIN_LINK"
     rm -f "$UNINSTALLER_LINK"

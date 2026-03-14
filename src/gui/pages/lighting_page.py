@@ -23,12 +23,13 @@ def _detect_model_type():
     for dmi_file in ("/sys/devices/virtual/dmi/id/product_name",
                      "/sys/devices/virtual/dmi/id/product_family"):
         try:
-            with open(dmi_file) as f:
-                name = f.read().strip().lower()
-                if "victus" in name:
-                    return "victus"
-                if "omen" in name:
-                    return "omen"
+            if os.path.exists(dmi_file):
+                with open(dmi_file) as f:
+                    name = f.read().strip().lower()
+                    if "victus" in name:
+                        return "victus"
+                    if "omen" in name:
+                        return "omen"
         except Exception: pass
     return "omen"
 

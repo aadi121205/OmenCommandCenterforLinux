@@ -48,26 +48,19 @@ class FanController:
 
     def _find_hwmon(self):
         """Find the 'hp' hwmon device.
-        Works with both the custom DKMS hp-wmi module and the stock
-        kernel hp-wmi module (which gained Omen fan control in 6.18+).
+        Matches hp-wmi reporting name 'hp'.
         """
-        # Method 1: Scan /sys/class/hwmon for name == "hp"
-        if os.path.exists("/sys/class/hwmon"):
-            for d in sorted(os.listdir("/sys/class/hwmon")):
-                path = os.path.join("/sys/class/hwmon", d)
-                name_file = os.path.join(path, "name")
-                if os.path.exists(name_file):
-                    try:
-                        with open(name_file) as f:
-                            name = f.read().strip().lower()
-                        if name == "hp":
-                            logger.info(f"Found HP hwmon at {path}")
-                            return path
-                    except Exception:
-                        pass
+        import glob
+        for path in glob.glob("/sys/class/hwmon/hwmon*/name"):
+            try:
+                with open(path, 'r') as f:
+                    if f.read().strip() == "hp":
+                        logger.info(f"Found HP hwmon at {os.path.dirname(path)}")
+                        return os.path.dirname(path)
+            except Exception:
+                pass
 
         # Method 2: Try platform device hwmon symlink
-        # Stock kernel module: /sys/devices/platform/hp-wmi/hwmon/hwmonN
         for platform_name in ("hp-wmi", "hp_wmi"):
             platform_hwmon = f"/sys/devices/platform/{platform_name}/hwmon"
             if os.path.exists(platform_hwmon):
@@ -736,7 +729,19 @@ class HPManagerService(object):
             "os_name": "Linux",
             "cpu_temp": 0.0,
             "gpu_temp": 0.0,
+            "product_name": "HP Laptop"
         }
+        
+        # Detect product name
+        for dmi_file in ("/sys/devices/virtual/dmi/id/product_name",
+                         "/sys/devices/virtual/dmi/id/product_family"):
+            try:
+                if os.path.exists(dmi_file):
+                    with open(dmi_file) as f:
+                        info["product_name"] = f.read().strip()
+                        break
+            except Exception: pass
+
         try:
             with open("/etc/os-release") as f:
                 for line in f:

@@ -199,9 +199,9 @@ class DashboardPage(Gtk.Box):
         ic.set_pixel_size(28)
         bar.append(ic)
 
-        lbl = Gtk.Label(label="Victus by HP")
-        lbl.add_css_class("heading")
-        bar.append(lbl)
+        self._model_lbl = Gtk.Label(label="HP Laptop")
+        self._model_lbl.add_css_class("heading")
+        bar.append(self._model_lbl)
 
         bar.append(Gtk.Label(hexpand=True))  # spacer
 
@@ -585,6 +585,7 @@ class DashboardPage(Gtk.Box):
         si = d.get("sys", {})
         self._os_lbl.set_label(si.get("os_name", "Linux"))
         self._kern_lbl.set_label(f"Kernel {si.get('kernel', '')}")
+        self._model_lbl.set_label(si.get("product_name", "HP Laptop"))
 
         # Temps — from direct hwmon reading
         self._cpu_temp.set_label(self._format_temp(d.get('cpu_temp', 0)))
