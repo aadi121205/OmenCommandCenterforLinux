@@ -494,8 +494,11 @@ def save_state():
             return
     try:
         os.makedirs(os.path.dirname(CONFIG_FILE), exist_ok=True)
-        with open(CONFIG_FILE, "w") as f:
+        # Atomik yazma işlemi eklendi
+        temp_file = f"{CONFIG_FILE}.tmp"
+        with open(temp_file, "w") as f:
             json.dump(snapshot, f)
+        os.replace(temp_file, CONFIG_FILE)
     except Exception as e:
         logger.error(f"State save error: {e}")
     finally:
@@ -897,16 +900,23 @@ def main():
             saved_fan = "auto"
             state["fan_mode"] = "auto"
             logger.warning("Custom fan mode not restorable (no saved targets), falling back to auto")
+            
         if saved_fan in ("auto", "max"):
-            ok = fan_ctrl.set_mode(saved_fan)
-            logger.info(f"Restored fan mode '{saved_fan}' (success={ok})")
+            if fan_ctrl.get_mode() != saved_fan:
+                ok = fan_ctrl.set_mode(saved_fan)
+                logger.info(f"Restored fan mode '{saved_fan}' (success={ok})")
+            else:
+                logger.info(f"Fan mode already '{saved_fan}', skipping write to prevent spin-up.")
 
     # Restore power profile
     if power_ctrl.available:
         saved_pp = state.get("power_profile", "balanced")
         if saved_pp in power_ctrl.get_profiles():
-            ok = power_ctrl.set_profile(saved_pp)
-            logger.info(f"Restored power profile '{saved_pp}' (success={ok})")
+            if power_ctrl.get_active() != saved_pp:
+                ok = power_ctrl.set_profile(saved_pp)
+                logger.info(f"Restored power profile '{saved_pp}' (success={ok})")
+            else:
+                logger.info(f"Power profile already '{saved_pp}', skipping.")
 
     service = HPManagerService()
 
