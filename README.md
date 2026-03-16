@@ -1,5 +1,5 @@
 
- # HP Laptop Manager (Linux) v1.1.5 #
+ # HP Laptop Manager (Linux) v1.1.6 #
 <p align="center">
   <img src="images/hplogolight.png" alt="Logo" width="250">
 
@@ -17,6 +17,14 @@
 </p>
 
 **HP Laptop Manager** is a native Linux application designed to unlock the full potential of HP Omen and Victus series laptops. It serves as an open-source alternative to the official OMEN Gaming Hub, providing essential controls in a modern, user-friendly interface.
+
+**New in v1.1.6:**
+
+- 🚀 **OMEN 16-wf & 16-ap Support**: Added robust WMI support for OMEN 16 14th Gen and newer models (Board IDs 8C77, 8E35, 8D41).
+- 🌪️ **Custom Fan Control Fixes**: Restored and forced manual fan control support (`force_fan_control_support`) specifically for modern boards to enable seamless custom curve tuning.
+- 🌡️ **ACPI & Thermal Profile Resolution**: Resolved `AE_AML_BUFFER_LIMIT` crashes by implementing precise RGB write delays, and fixed the "Platform Profile: Not Supported" error by properly aligning the Embedded Controller (EC) thermal offsets. 
+- 🌈 **Reversed RGB Layout Engine**: Built an automatic zone-mapping engine to correct the reversed left-to-right keyboard lighting behavior on specific OMEN variants.
+- ⚡ **Background Poller Efficiency**: Eliminated UI stuttering and high CPU spikes by shifting all `nvidia-smi` and ACPI sensor polling strictly to non-blocking background threads with backoff cooldowns.
 
 **New in v1.1.5:**
 
@@ -61,26 +69,6 @@
 - ✨ **Name Change**: `hp-omen-core` has been renamed to `hp-rgb-lighting` to better reflect its function and support Victus devices appropriately.
 - 🔄 **Kernel 7.0+ Adaptation**: Updated internal checks. Fan control logic defaults to stock `hp-wmi` on kernels >= 7.0, and auto-installs our custom `hp-wmi` module on kernels < 7.0.
 - 🚀 **setup.sh update**: Easily adapt to new kernel updates and ensure old `hp-omen-core` debris is purged from your system with one simple update command.
-
-**Previous Releases:**
-
-**v1.0.1:**
-
-- 🟢 **Minimal Fixes**: Small stability improvements and minor bug fixes.
-
-**v1.0.0:**
-
-> 📦 **Versioning Change**: Starting with this release, the project adopts **Semantic Versioning** (`major.minor.patch`) for a more professional and standardized release cycle. Previous versions (v4.x) have been remapped accordingly.
-
-- 🔄 **Stock HP WMI Support**: On kernel 7.0+, the application now uses the **original HP WMI driver** shipped with the kernel for fan control — no custom WMI module needed.
-- 🛠️ **Legacy Kernel Support**: For kernels **below 7.0**, the custom 7.0 WMI driver (`hp-wmi`) is still bundled and the installer automatically installs it alongside `hp-rgb-lighting`.
-- ⚠️ **Secure Boot Notice**: Keyboard RGB control (`hp-rgb-lighting`) is **not compatible with Secure Boot**. If Secure Boot is enabled, the `hp-rgb-lighting` module cannot be loaded and keyboard lighting features will be unavailable. You must **disable Secure Boot** in BIOS to use keyboard control.
-- 🔥 **Automatic Updates**: Check for and install updates directly from the Settings page — no need to re-clone or download manually.
-- 🌡️ **Accurate GPU Temperature**: Fixed GPU temperature detection — correctly uses `nvidia-smi` with auto-detected PCI path, and never falls back to CPU package temperature.
-- 🎨 **Performance Mode Colors**: Dashboard performance buttons now use distinct colors (green/blue/orange) instead of emojis.
-- 🔋 **Battery-Safe GPU Polling**: Dashboard no longer wakes the dGPU from sleep — checks PCI suspend state before polling `nvidia-smi`.
-- ⚡ **Smooth CPU Readings**: CPU usage display uses EMA smoothing to eliminate rapid fluctuations.
-- 🎮 **Non-Blocking Game Scan**: Game library scanning runs in background — no more UI freezing when opening the Games tab.
 
 ## ✨ Features
 

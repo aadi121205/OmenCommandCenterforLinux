@@ -19,7 +19,7 @@ def T(k):
     return _T(k)
 
 
-APP_VERSION = "1.1.5"
+APP_VERSION = "1.1.6"
 GITHUB_REPO = "yunusemreyl/LaptopManagerForHP"
 GITHUB_API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 GITHUB_RELEASES_URL = f"https://github.com/{GITHUB_REPO}/releases/latest"
@@ -597,7 +597,7 @@ class SettingsPage(Gtk.Box):
             out.append("Platform Profile: Not Supported")
 
         # 4. Thermal Version (Heuristic)
-        v1_boards = ["8BAB", "8BCD", "8C77", "8C78", "8C99", "8C9C", "8D41", "8BBE", "8BD4", "8BD5"] 
+        v1_boards = ["8BAB", "8BCD", "8C77", "8E35", "8C78", "8C99", "8C9C", "8D41", "8BBE", "8BD4", "8BD5"] 
         if board_id in v1_boards or os.path.exists(pp_path):
             out.append("Thermal Version: 1 (Detected via DMI/Platform Profile)")
         else:

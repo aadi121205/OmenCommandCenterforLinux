@@ -62,7 +62,7 @@ install_deps() {
             apt-get update -qq
             apt-get install -y dkms build-essential linux-headers-"$(uname -r)"
             ;;
-        fedora)
+        fedora|nobara)
             info "Installing dependencies (dnf)..."
             dnf install -y dkms kernel-devel kernel-headers gcc make
             ;;
@@ -196,6 +196,13 @@ AUTOINSTALL="yes"
 DKMSRGB
     else
         info "Kernel $(uname -r) detected (< 7.0) — installing both hp-wmi and hp-rgb-lighting..."
+        
+        info "Checking for stock hp-wmi driver to backup and disable..."
+        ORIG_WMI=$(modinfo -n hp-wmi 2>/dev/null || true)
+        if [[ -n "$ORIG_WMI" ]] && [[ -f "$ORIG_WMI" ]] && [[ ! "$ORIG_WMI" == *"updates"* ]]; then
+            info "Backing up stock driver: $ORIG_WMI"
+            mv "$ORIG_WMI" "${ORIG_WMI}.backup"
+        fi
     fi
 
     # Install via DKMS
@@ -215,32 +222,77 @@ DKMSRGB
     fi
 
     if $SECUREBOOT; then
-        echo ""
-        echo -e "${YELLOW}╔═══════════════════════════════════════════════════════════╗${NC}"
-        echo -e "${YELLOW}║  ⚠  Secure Boot is ENABLED                               ║${NC}"
-        echo -e "${YELLOW}║                                                           ║${NC}"
-        echo -e "${YELLOW}║  The hp-rgb-lighting module (keyboard RGB control) cannot ║${NC}"
-        echo -e "${YELLOW}║  be loaded while Secure Boot is active.                   ║${NC}"
-        echo -e "${YELLOW}║                                                           ║${NC}"
-        echo -e "${YELLOW}║  To use keyboard lighting control, please disable         ║${NC}"
-        echo -e "${YELLOW}║  Secure Boot from your BIOS/UEFI settings.               ║${NC}"
-        echo -e "${YELLOW}║                                                           ║${NC}"
-        echo -e "${YELLOW}║  Fan control and other features work normally.            ║${NC}"
-        echo -e "${YELLOW}╚═══════════════════════════════════════════════════════════╝${NC}"
-        echo ""
-        warn "Skipping module load due to Secure Boot. Keyboard RGB will be unavailable."
+        # 1. Generate MOK Key (if it doesn't exist)
+        MOK_DIR="/var/lib/hp-manager/mok"
+        mkdir -p "$MOK_DIR"
+        if [ ! -f "$MOK_DIR/MOK.priv" ] || [ ! -f "$MOK_DIR/MOK.der" ]; then
+            info "Generating MOK key for Secure Boot..."
+            openssl req -new -x509 -newkey rsa:2048 -keyout "$MOK_DIR/MOK.priv" -outform DER -out "$MOK_DIR/MOK.der" -days 36500 -subj "/CN=hp-manager-mok/" -nodes 2>/dev/null
+        fi
+
+        # 2. Sign installed modules
+        KVER=$(uname -r)
+        info "Signing custom modules for Secure Boot..."
+        SIGN_SCRIPT=$(find /usr/src/linux-headers-$KVER/scripts /usr/src/kernels/$KVER/scripts /lib/modules/$KVER/build/scripts -name "sign-file" -type f 2>/dev/null | head -n 1)
+        
+        if [ -n "$SIGN_SCRIPT" ]; then
+            for MOD_NAME in "hp-rgb-lighting.ko" "hp-wmi.ko"; do
+                if [ "$MOD_NAME" = "hp-wmi.ko" ] && $STOCK_FAN_SUPPORT; then
+                    continue # We use stock hp-wmi, no need to sign a custom one
+                fi
+                # Find the module file installed by us (not the backups)
+                MOD_PATH=$(find /lib/modules/$KVER -name "$MOD_NAME" 2>/dev/null | grep -v "backup" | head -n 1)
+                if [ -n "$MOD_PATH" ]; then
+                    "$SIGN_SCRIPT" sha256 "$MOK_DIR/MOK.priv" "$MOK_DIR/MOK.der" "$MOD_PATH" || warn "Failed to sign $MOD_NAME"
+                fi
+            done
+        else
+            warn "sign-file script not found! The modules could not be signed. Secure Boot may block them."
+        fi
+
+        # 3. Import MOK to EFI if not enrolled
+        if mokutil --test-key "$MOK_DIR/MOK.der" 2>/dev/null | grep -qi "not enrolled"; then
+            info "Enrolling MOK key..."
+            printf "yunusemreyl\nyunusemreyl\n" | mokutil --import "$MOK_DIR/MOK.der" 2>/dev/null || warn "Failed to import MOK key."
+            
+            echo ""
+            echo -e "${YELLOW}╔═══════════════════════════════════════════════════════════╗${NC}"
+            echo -e "${YELLOW}║  🔒 Secure Boot is ENABLED                                ║${NC}"
+            echo -e "${YELLOW}║                                                           ║${NC}"
+            echo -e "${YELLOW}║  A Machine Owner Key (MOK) has been registered to sign    ║${NC}"
+            echo -e "${YELLOW}║  the custom drivers.                                      ║${NC}"
+            echo -e "${YELLOW}║                                                           ║${NC}"
+            echo -e "${YELLOW}║  ${RED}PLEASE REBOOT YOUR SYSTEM NOW.${YELLOW}                           ║${NC}"
+            echo -e "${YELLOW}║  Upon reboot, a blue 'Perform MOK management' screen      ║${NC}"
+            echo -e "${YELLOW}║  will appear. Follow these exact steps:                   ║${NC}"
+            echo -e "${YELLOW}║                                                           ║${NC}"
+            echo -e "${YELLOW}║  1. Select 'Enroll MOK'                                   ║${NC}"
+            echo -e "${YELLOW}║  2. Select 'Continue'                                     ║${NC}"
+            echo -e "${YELLOW}║  3. Select 'Yes'                                          ║${NC}"
+            echo -e "${YELLOW}║  4. Enter password: ${GREEN}yunusemreyl${YELLOW}                           ║${NC}"
+            echo -e "${YELLOW}║  5. Select 'Reboot'                                       ║${NC}"
+            echo -e "${YELLOW}╚═══════════════════════════════════════════════════════════╝${NC}"
+            echo ""
+            warn "Skipping module load. The modules will load automatically after MOK enrollment."
+        else
+            ok "MOK key is already enrolled. Modules can be loaded."
+        fi
     fi
 
     # Load the modules
-    if $SECUREBOOT; then
-        info "Secure Boot active — skipping module load (hp-rgb-lighting requires Secure Boot disabled)."
-        ok "DKMS installation complete. Modules will load after Secure Boot is disabled and system is rebooted."
+    MOK_PENDING=false
+    if $SECUREBOOT && mokutil --test-key "$MOK_DIR/MOK.der" 2>/dev/null | grep -qi "not enrolled"; then
+        MOK_PENDING=true
+    fi
+
+    if $MOK_PENDING; then
+        info "MOK enrollment pending — skipping module load until reboot."
     elif $STOCK_FAN_SUPPORT; then
         info "Loading modules..."
         # Only load hp-rgb-lighting; fan control uses stock hp-wmi
         modprobe led_class_multicolor 2>/dev/null || true
         if ! modprobe hp_rgb_lighting 2>/dev/null; then
-            insmod "$SCRIPT_DIR/hp-rgb-lighting.ko" 2>/dev/null || warn "hp-rgb-lighting could not be loaded."
+            insmod "$SCRIPT_DIR/hp-rgb-lighting.ko" 2>/dev/null || warn "hp-rgb-lighting could not be loaded. (Secure boot issue?)"
         fi
         ok "hp-rgb-lighting (RGB) installed. Stock hp-wmi handles fan control."
     else
@@ -249,6 +301,9 @@ DKMSRGB
         modprobe led_class_multicolor 2>/dev/null || true
         if ! modprobe hp_wmi 2>/dev/null; then
             insmod "$SCRIPT_DIR/hp-wmi.ko" || warn "hp-wmi could not be loaded."
+        fi
+        if ! modprobe hp_rgb_lighting 2>/dev/null; then
+            insmod "$SCRIPT_DIR/hp-rgb-lighting.ko" 2>/dev/null || warn "hp-rgb-lighting could not be loaded."
         fi
         ok "Both hp-wmi and hp-rgb-lighting installed."
     fi
@@ -278,6 +333,21 @@ do_uninstall() {
         ok "Uninstalled successfully."
     else
         warn "DKMS entry not found. Nothing to remove."
+    fi
+
+    # Restore original driver if backup exists
+    info "Restoring original driver backups (if any)..."
+    KVER=$(uname -r)
+    FOUND_BACKUP=false
+    for BU_FILE in $(find /lib/modules/"$KVER" -name "hp-wmi.ko*.backup" 2>/dev/null); do
+        ORIG_FILE="${BU_FILE%.backup}"
+        info "Restoring $ORIG_FILE from backup..."
+        mv "$BU_FILE" "$ORIG_FILE"
+        FOUND_BACKUP=true
+    done
+
+    if [ "$FOUND_BACKUP" = true ]; then
+        depmod -a
     fi
 
     # Reload original kernel module

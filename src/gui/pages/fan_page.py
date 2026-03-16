@@ -308,6 +308,21 @@ class SystemMonitor(threading.Thread):
                                 label = f.read().strip()
                         except Exception:
                             label = os.path.basename(tf).replace("_input", "")
+                        
+                        # Fix up messy kernel sensor labels for the UI
+                        if label.lower() == "package id 0":
+                            label = "CPU Package"
+                        elif label.lower().startswith("core "):
+                            try:
+                                core_num = int(label.split()[1])
+                                label = f"Core {core_num + 1}"
+                            except ValueError:
+                                pass
+                        elif label.lower() == "tctl":
+                            label = "CPU (tctl)"
+                        elif label.lower() == "tdie":
+                            label = "CPU (tdie)"
+                            
                         sensors.append({"driver": name, "label": label, "temp": temp})
                     except Exception: pass
         except Exception: pass
@@ -371,14 +386,6 @@ class FanPage(Gtk.Box):
 
     def _get_hw_power_limits(self):
         gpu_w, cpu_w = 0, 0
-        try:
-            out = subprocess.check_output(["nvidia-smi", "-q", "-d", "POWER"], timeout=2, text=True)
-            import re
-            m = re.search(r"Max Power Limit\s*:\s*([\d\.]+)\s*W", out)
-            if m:
-                gpu_w = int(float(m.group(1)))
-        except Exception:
-            pass
             
         try:
             rapl = "/sys/class/powercap/intel-rapl/intel-rapl:0/constraint_1_power_limit_uw" # PL2 is usually Max

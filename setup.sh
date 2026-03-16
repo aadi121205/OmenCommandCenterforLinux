@@ -303,6 +303,7 @@ rm -f /etc/systemd/system/hp-omen-key.service
 rm -f "$BIN_LINK"
 rm -rf "$INSTALL_DIR"
 rm -rf "$DATA_DIR"
+rm -rf "/var/lib/hp-manager"
 rm -f /etc/dbus-1/system.d/com.yyl.hpmanager.conf
 rm -f /usr/share/polkit-1/actions/com.yyl.hpmanager.policy
 rm -f /usr/share/applications/com.yyl.hpmanager.desktop
@@ -344,6 +345,7 @@ do_uninstall() {
     rm -f "$UNINSTALLER_LINK"
     rm -rf "$INSTALL_DIR"
     rm -rf "$DATA_DIR"
+    rm -rf "/var/lib/hp-manager"
     rm -f /etc/dbus-1/system.d/com.yyl.hpmanager.conf
     rm -f /usr/share/polkit-1/actions/com.yyl.hpmanager.policy
     rm -f /usr/share/applications/com.yyl.hpmanager.desktop

@@ -184,6 +184,19 @@ class RGBController:
         self.driver_path = self._find_rgb_path()
         self.available = self.driver_path is not None
         self.last_written = [None] * 8
+        self.reversed = False
+        self._check_reversed_layout()
+
+    def _check_reversed_layout(self):
+        try:
+            if os.path.exists("/sys/class/dmi/id/board_name"):
+                with open("/sys/class/dmi/id/board_name", "r") as f:
+                    board_id = f.read().strip()
+                    if board_id in ("8C77", "8E35", "8D41"):
+                        self.reversed = True
+                        logger.info(f"RGB: Reversed zone layout enabled for board {board_id}")
+        except Exception:
+            pass
 
     def _find_rgb_path(self):
         if os.path.exists(DRIVER_PATH_CUSTOM):
@@ -208,13 +221,20 @@ class RGBController:
     def write_zone(self, zone, hex_color):
         if not self.available or not (0 <= zone <= 7):
             return
-        if self.last_written[zone] == hex_color:
+            
+        target_zone = zone
+        if self.reversed and 0 <= zone <= 3:
+            target_zone = 3 - zone
+            
+        if self.last_written[target_zone] == hex_color:
             return
+            
         try:
-            with open(f"{self.driver_path}/zone{zone}", "w") as f:
+            time.sleep(0.01)  # Mitigate AE_AML_BUFFER_LIMIT in ACPI
+            with open(f"{self.driver_path}/zone{target_zone}", "w") as f:
                 f.write(hex_color)
                 f.flush()
-            self.last_written[zone] = hex_color
+            self.last_written[target_zone] = hex_color
         except Exception:
             pass
 
@@ -809,15 +829,30 @@ class HPManagerService(object):
             except Exception: pass
 
         if self._has_nvidia_smi:
-            try:
-                out = subprocess.check_output(
-                    ["nvidia-smi", "--query-gpu=temperature.gpu", "--format=csv,noheader,nounits"],
-                    stderr=subprocess.DEVNULL, timeout=2
-                ).decode().strip()
-                return float(out)
-            except Exception:
-                pass
-        return "NOT_REACHABLE"
+            now = time.time()
+            if not hasattr(self, '_last_nv_time'):
+                self._last_nv_time = 0.0
+                self._nv_temp_cache = 0.0
+                self._nv_fail_cooldown = 0.0
+
+            if now < self._nv_fail_cooldown:
+                return self._nv_temp_cache or 0.0
+
+            if now - self._last_nv_time > 5.0:
+                self._last_nv_time = now
+                try:
+                    out = subprocess.check_output(
+                        ["nvidia-smi", "--query-gpu=temperature.gpu", "--format=csv,noheader,nounits"],
+                        stderr=subprocess.DEVNULL, timeout=1.0
+                    ).decode().strip()
+                    self._nv_temp_cache = float(out)
+                except Exception:
+                    # If it fails or times out (e.g. GPU asleep), wait 15 seconds before trying again
+                    self._nv_fail_cooldown = now + 15.0
+            
+            return self._nv_temp_cache or 0.0
+
+        return 0.0
 
     def CleanMemory(self):
         try:
