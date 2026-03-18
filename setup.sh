@@ -139,7 +139,7 @@ install_dependencies() {
 
     case $PM in
         pacman)
-            $INSTALL_CMD python python-gobject gtk4 libadwait python-pydbus python-cairo
+            $INSTALL_CMD python python-gobject gtk4 libadwaita python-pydbus python-cairo
             ;;
         apt)
             $INSTALL_CMD python3 python3-gi gir1.2-gtk-4.0 gir1.2-adw-1 python3-pydbus python3-cairo
