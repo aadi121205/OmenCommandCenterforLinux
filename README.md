@@ -6,7 +6,7 @@
 ## 📖 About The Project
 <p align="center">
   <img src="screenshots/dashboard.png" alt="Dashboard" width="45%">
-  <img src="screenshots/perfomance.png" alt="Fan Control" width="45%">
+  <img src="screenshots/performance.png" alt="Fan Control" width="45%">
 </p>
 <p align="center">
   <img src="screenshots/lighting.png" alt="Lighting" width="45%">
