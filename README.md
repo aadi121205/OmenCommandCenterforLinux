@@ -5,12 +5,12 @@
 
 ## 📖 About The Project
 <p align="center">
-  <img src="screenshots/dash.png" alt="Dashboard" width="45%">
-  <img src="screenshots/fan.png" alt="Fan Control" width="45%">
+  <img src="screenshots/dashboard.png" alt="Dashboard" width="45%">
+  <img src="screenshots/perfomance.png" alt="Fan Control" width="45%">
 </p>
 <p align="center">
-  <img src="screenshots/key.png" alt="Lighting" width="45%">
-  <img src="screenshots/mux.png" alt="MUX Switch" width="45%">
+  <img src="screenshots/lighting.png" alt="Lighting" width="45%">
+  <img src="screenshots/keys.png" alt="MUX Switch" width="45%">
 </p>
 <p align="center">
   <img src="screenshots/settings.png" alt="Settings" width="45%">
