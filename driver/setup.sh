@@ -289,22 +289,15 @@ DKMSRGB
         info "MOK enrollment pending — skipping module load until reboot."
     elif $STOCK_FAN_SUPPORT; then
         info "Loading modules..."
-        # Only load hp-rgb-lighting; fan control uses stock hp-wmi
         modprobe led_class_multicolor 2>/dev/null || true
-        if ! modprobe hp_rgb_lighting 2>/dev/null; then
-            insmod "$SCRIPT_DIR/hp-rgb-lighting.ko" 2>/dev/null || warn "hp-rgb-lighting could not be loaded. (Secure boot issue?)"
-        fi
+        modprobe hp_rgb_lighting 2>/dev/null || warn "hp-rgb-lighting could not be loaded. (Secure boot issue?)"
         ok "hp-rgb-lighting (RGB) installed. Stock hp-wmi handles fan control."
     else
         info "Loading modules..."
         rmmod hp_wmi 2>/dev/null || true
         modprobe led_class_multicolor 2>/dev/null || true
-        if ! modprobe hp_wmi 2>/dev/null; then
-            insmod "$SCRIPT_DIR/hp-wmi.ko" || warn "hp-wmi could not be loaded."
-        fi
-        if ! modprobe hp_rgb_lighting 2>/dev/null; then
-            insmod "$SCRIPT_DIR/hp-rgb-lighting.ko" 2>/dev/null || warn "hp-rgb-lighting could not be loaded."
-        fi
+        modprobe hp_wmi 2>/dev/null || warn "hp-wmi could not be loaded."
+        modprobe hp_rgb_lighting 2>/dev/null || warn "hp-rgb-lighting could not be loaded."
         ok "Both hp-wmi and hp-rgb-lighting installed."
     fi
 
@@ -360,8 +353,8 @@ do_uninstall() {
 usage() {
     echo "Usage: sudo $0 [install|uninstall]"
     echo ""
-    echo "  install     Build and install the module via DKMS"
-    echo "  uninstall   Remove the module and restore the original"
+    echo "  install      Build and install the module via DKMS"
+    echo "  uninstall    Remove the module and restore the original"
     echo ""
     echo "If no argument is given, 'install' is assumed."
 }
