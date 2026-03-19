@@ -588,7 +588,7 @@ static int hp_wmi_perform_query(int query, enum hp_wmi_command command,
 	 * Older firmware requires datasize == 1 even when there is no real
 	 * payload; kzalloc above guarantees data[0] == 0 in that case.
 	 */
-	args->datasize = (insize == 0 && !zero_insize_support) ? 1 : insize;
+	args->datasize = (insize == 0 && !zero_insize_support) ? 4 : insize;
 
 	if (insize > 0)
 		memcpy(args->data, buffer, flex_array_size(args, data, insize));
