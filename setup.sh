@@ -11,7 +11,7 @@ DATA_DIR="/usr/share/hp-manager"
 BIN_LINK="/usr/bin/hp-manager"
 UNINSTALLER_LINK="/usr/bin/hp-manager-uninstall"
 CONFIG_DIR="/etc/hp-manager"
-VERSION="1.1.6"
+VERSION="1.1.7"
 
 # Colors
 RED='\033[0;31m'
@@ -55,6 +55,7 @@ msg() {
             "usage")                printf '%s\n' "Kullanım: $0 [install|uninstall|update]" ;;
             "select_power_manager") printf '\n%s\n' "Hangi güç yöneticisini kullanmak istersiniz?" ;;
             "pm_detected")          printf '%b\n' "${CYAN}[i]${NC} Sistemde tespit edildi: ${1:-}" ;;
+            "pm_already_present")   printf '%s\n' "Sistemde zaten bir güç yöneticisi var (${1:-}), kurulum atlanıyor." ;;
             "pm_opt_1")             printf '%s\n' "1) power-profiles-daemon (Varsayılan)" ;;
             "pm_opt_2")             printf '%s\n' "2) tuned-ppd (Fedora kullanıyorsanız önerilir)" ;;
             "pm_opt_3")             printf '%s\n' "3) TLP (https://github.com/linrunner/TLP)" ;;
@@ -86,6 +87,7 @@ msg() {
             "usage")                printf '%s\n' "Usage: $0 [install|uninstall|update]" ;;
             "select_power_manager") printf '\n%s\n' "Which power manager would you like to use?" ;;
             "pm_detected")          printf '%b\n' "${CYAN}[i]${NC} Detected on system: ${1:-}" ;;
+            "pm_already_present")   printf '%s\n' "A power manager is already present (${1:-}), skipping installation." ;;
             "pm_opt_1")             printf '%s\n' "1) power-profiles-daemon (Default)" ;;
             "pm_opt_2")             printf '%s\n' "2) tuned-ppd (Recommended for Fedora users)" ;;
             "pm_opt_3")             printf '%s\n' "3) TLP (https://github.com/linrunner/TLP)" ;;
@@ -115,7 +117,7 @@ detect_pm() {
         info "Detected distro: $_DISTRO_NAME"
     fi
 
-    # FIX: dnf check must come before pacman because Fedora/Nobara may have both
+    # dnf check must come before pacman — Fedora/Nobara may have both
     if [ -f /etc/fedora-release ] || [ -f /etc/nobara-release ] || command -v dnf &>/dev/null; then
         PM="dnf"
         INSTALL_CMD="dnf install -y"
@@ -124,7 +126,7 @@ detect_pm() {
         INSTALL_CMD="pacman -S --noconfirm --needed"
     elif command -v apt &>/dev/null; then
         PM="apt"
-        INSTALL_CMD="apt install -y"
+        INSTALL_CMD="DEBIAN_FRONTEND=noninteractive apt install -y"
     elif command -v zypper &>/dev/null; then
         PM="zypper"
         INSTALL_CMD="zypper install -y"
@@ -134,10 +136,53 @@ detect_pm() {
     log "$(msg pm_name "$PM")"
 }
 
+# --- POWER MANAGER DETECTION ---
+# Returns the name of the first active power manager found, or empty string.
+detect_active_power_manager() {
+    # Check running services first (most reliable)
+    local services=(
+        "power-profiles-daemon"
+        "tuned"
+        "tuned-ppd"
+        "tlp"
+        "auto-cpufreq"
+    )
+    for svc in "${services[@]}"; do
+        if systemctl is-active --quiet "${svc}.service" 2>/dev/null; then
+            echo "$svc"
+            return
+        fi
+    done
+
+    # Check installed binaries as fallback
+    command -v tlp        &>/dev/null && { echo "tlp";        return; }
+    command -v auto-cpufreq &>/dev/null && { echo "auto-cpufreq"; return; }
+
+    # Check installed packages as last resort
+    if command -v rpm &>/dev/null; then
+        for pkg in power-profiles-daemon tuned tuned-ppd tlp; do
+            rpm -q "$pkg" &>/dev/null 2>&1 && { echo "$pkg"; return; }
+        done
+    fi
+    if command -v dpkg &>/dev/null; then
+        for pkg in power-profiles-daemon tlp auto-cpufreq; do
+            dpkg -l "$pkg" 2>/dev/null | grep -q "^ii" && { echo "$pkg"; return; }
+        done
+    fi
+    if command -v pacman &>/dev/null; then
+        for pkg in power-profiles-daemon tlp auto-cpufreq; do
+            pacman -Q "$pkg" &>/dev/null 2>&1 && { echo "$pkg"; return; }
+        done
+    fi
+
+    echo ""
+}
+
 # --- INSTALL DEPENDENCIES ---
 install_dependencies() {
     info "$(msg installing_deps)"
 
+    # Base packages — power manager NOT included here
     case $PM in
         pacman)
             $INSTALL_CMD python python-gobject gtk4 libadwaita python-pydbus python-cairo
@@ -150,56 +195,53 @@ install_dependencies() {
             ;;
     esac
 
-    # Power Manager Detection
-    local detected=()
-    if systemctl list-unit-files power-profiles-daemon.service 2>/dev/null | grep -q "power-profiles-daemon"; then
-        detected+=("power-profiles-daemon")
-    fi
-    command -v tlp &>/dev/null          && detected+=("TLP")
-    command -v auto-cpufreq &>/dev/null && detected+=("auto-cpufreq")
-    if command -v tuned &>/dev/null || { command -v rpm &>/dev/null && rpm -q tuned &>/dev/null 2>/dev/null; }; then
-        detected+=("tuned")
-    fi
+    # --- Power Manager ---
+    # If one is already active/installed, skip entirely — no question asked.
+    local existing_pm
+    existing_pm=$(detect_active_power_manager)
 
-    # Power Manager Selection
-    msg select_power_manager
-    if [ ${#detected[@]} -gt 0 ]; then
-        msg pm_detected "${detected[*]}"
+    if [ -n "$existing_pm" ]; then
+        log "$(msg pm_already_present "$existing_pm")"
+    else
+        # Nothing found — ask the user which one to install
+        msg select_power_manager
+        msg pm_opt_1
+        msg pm_opt_2
+        msg pm_opt_3
+        msg pm_opt_4
+        msg pm_opt_5
+        msg pm_choice
+        read -r choice
+
+        case ${choice:-1} in
+            2)
+                local pkg="tuned-ppd"
+                info "$(msg installing_pm "$pkg")"
+                $INSTALL_CMD "$pkg" || warn "$(msg pm_not_in_repo "$pkg")"
+                ;;
+            3)
+                local pkg="tlp"
+                info "$(msg installing_pm "$pkg")"
+                $INSTALL_CMD "$pkg" || warn "$(msg pm_not_in_repo "$pkg")"
+                ;;
+            4)
+                local pkg="auto-cpufreq"
+                info "$(msg installing_pm "$pkg")"
+                $INSTALL_CMD "$pkg" || warn "$(msg pm_not_in_repo "$pkg")"
+                ;;
+            5)
+                info "$(msg skipping_pm)"
+                ;;
+            *)
+                # Default (1 or Enter): power-profiles-daemon
+                local pkg="power-profiles-daemon"
+                info "$(msg installing_pm "$pkg")"
+                if ! $INSTALL_CMD "$pkg" 2>/dev/null; then
+                    warn "$(msg pm_not_in_repo "$pkg")"
+                fi
+                ;;
+        esac
     fi
-
-    msg pm_opt_1
-    msg pm_opt_2
-    msg pm_opt_3
-    msg pm_opt_4
-    msg pm_opt_5
-    msg pm_choice
-    read -r choice
-
-    case $choice in
-        2)
-            local pkg="tuned-ppd"
-            info "$(msg installing_pm "$pkg")"
-            $INSTALL_CMD "$pkg" || warn "$(msg pm_not_in_repo "$pkg")"
-            ;;
-        3)
-            local pkg="tlp"
-            info "$(msg installing_pm "$pkg")"
-            $INSTALL_CMD "$pkg" || warn "$(msg pm_not_in_repo "$pkg")"
-            ;;
-        4)
-            local pkg="auto-cpufreq"
-            info "$(msg installing_pm "$pkg")"
-            $INSTALL_CMD "$pkg" || warn "$(msg pm_not_in_repo "$pkg")"
-            ;;
-        5)
-            info "$(msg skipping_pm)"
-            ;;
-        *)
-            local pkg="power-profiles-daemon"
-            info "$(msg installing_pm "$pkg")"
-            $INSTALL_CMD "$pkg" || warn "$(msg pm_not_in_repo "$pkg")"
-            ;;
-    esac
 
     log "$(msg deps_installed)"
 }
@@ -218,26 +260,18 @@ manage_driver() {
             if [ "$action" = "install" ]; then
                 info "Applying kernel module configuration..."
 
-                # FIX: removed mkinitcpio -P — not needed after DKMS install,
-                # it's slow and modules-load.d handles boot-time loading already.
-
                 # Unload stock hp_wmi before loading our DKMS override.
-                # Use modprobe -r (not rmmod) so dependencies are handled correctly.
                 info "Unloading stock hp_wmi module..."
                 modprobe -r hp_wmi 2>/dev/null || true
 
-                # FIX: use modprobe (searches installed module paths) instead of
-                # insmod (requires an explicit file path). DKMS installs to
-                # /usr/lib/modules/.../updates/dkms/ which insmod can't find
-                # without a full path.
                 info "Loading modules via modprobe..."
-                if modprobe hp-wmi; then
+                if modprobe hp-wmi 2>/dev/null; then
                     log "hp-wmi loaded successfully"
                 else
                     warn "hp-wmi failed to load — check: dmesg | tail -20"
                 fi
 
-                if modprobe hp-rgb-lighting; then
+                if modprobe hp-rgb-lighting 2>/dev/null; then
                     log "hp-rgb-lighting loaded successfully"
                 else
                     warn "hp-rgb-lighting failed to load"
@@ -304,7 +338,7 @@ LAUNCHER
     cp data/com.yyl.hpmanager.policy  /usr/share/polkit-1/actions/
     cp data/com.yyl.hpmanager.desktop /usr/share/applications/
 
-    # Ensure drivers load on boot via modules-load.d (no blacklist needed)
+    # Ensure drivers load on boot via modules-load.d
     echo "hp-rgb-lighting" > /etc/modules-load.d/hp-rgb-lighting.conf
     echo "hp-wmi"          > /etc/modules-load.d/hp-wmi.conf
 
@@ -325,13 +359,12 @@ BIN_LINK="/usr/bin/hp-manager"
 UNINSTALLER_LINK="/usr/bin/hp-manager-uninstall"
 
 echo "Stopping and disabling services..."
-systemctl stop    hp-manager.service com.yyl.hpmanager.service hp-omen-key.service 2>/dev/null || true
-systemctl disable hp-manager.service com.yyl.hpmanager.service hp-omen-key.service 2>/dev/null || true
+systemctl stop    hp-manager.service com.yyl.hpmanager.service 2>/dev/null || true
+systemctl disable hp-manager.service com.yyl.hpmanager.service 2>/dev/null || true
 
 echo "Removing files..."
 rm -f /etc/systemd/system/hp-manager.service
 rm -f /etc/systemd/system/com.yyl.hpmanager.service
-rm -f /etc/systemd/system/hp-omen-key.service
 rm -f "$BIN_LINK"
 rm -rf "$INSTALL_DIR"
 rm -rf "$DATA_DIR"
@@ -340,7 +373,6 @@ rm -f /etc/dbus-1/system.d/com.yyl.hpmanager.conf
 rm -f /usr/share/polkit-1/actions/com.yyl.hpmanager.policy
 rm -f /usr/share/applications/com.yyl.hpmanager.desktop
 rm -f /usr/share/icons/hicolor/48x48/apps/omenapplogo.png
-rm -f /etc/udev/rules.d/90-hp-omen-key.rules
 rm -f /etc/modules-load.d/hp-rgb-lighting.conf
 rm -f /etc/modules-load.d/hp-wmi.conf
 
@@ -366,14 +398,11 @@ do_uninstall() {
 
     systemctl stop    hp-manager.service com.yyl.hpmanager.service 2>/dev/null || true
     systemctl disable hp-manager.service com.yyl.hpmanager.service 2>/dev/null || true
-    systemctl stop    hp-omen-key.service 2>/dev/null || true
-    systemctl disable hp-omen-key.service 2>/dev/null || true
 
     manage_driver "uninstall"
 
     rm -f /etc/systemd/system/hp-manager.service
     rm -f /etc/systemd/system/com.yyl.hpmanager.service
-    rm -f /etc/systemd/system/hp-omen-key.service
     rm -f "$BIN_LINK"
     rm -f "$UNINSTALLER_LINK"
     rm -rf "$INSTALL_DIR"
@@ -383,7 +412,6 @@ do_uninstall() {
     rm -f /usr/share/polkit-1/actions/com.yyl.hpmanager.policy
     rm -f /usr/share/applications/com.yyl.hpmanager.desktop
     rm -f /usr/share/icons/hicolor/48x48/apps/omenapplogo.png
-    rm -f /etc/udev/rules.d/90-hp-omen-key.rules
     rm -f /etc/modules-load.d/hp-rgb-lighting.conf
     rm -f /etc/modules-load.d/hp-wmi.conf
 
@@ -400,6 +428,9 @@ do_update() {
         info "Pulling latest changes..."
         git stash 2>/dev/null || true
         git pull
+        # Re-exec with the freshly updated script so bash reads the new version
+        info "Restarting setup with updated script..."
+        exec "$0" _update_apply
     fi
 
     do_uninstall
@@ -423,9 +454,10 @@ if [ $# -eq 0 ]; then
 fi
 
 case "${1}" in
-    install)   do_install ;;
-    uninstall) do_uninstall ;;
-    update)    do_update ;;
+    install)        do_install ;;
+    uninstall)      do_uninstall ;;
+    update)         do_update ;;
+    _update_apply)  do_uninstall; do_install; log "$(msg updated)" ;;
     -h|--help)
         msg usage
         echo "Options: install, uninstall, update"
