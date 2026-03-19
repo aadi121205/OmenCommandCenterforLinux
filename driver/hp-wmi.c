@@ -611,6 +611,15 @@ static int hp_wmi_perform_query(int query, enum hp_wmi_command command,
 		goto out_free;
 	}
 
+	/* Validate buffer before any dereference */
+	if (!obj->buffer.pointer ||
+	    obj->buffer.length < sizeof(*bios_return)) {
+		pr_warn("query 0x%x returned invalid buffer (ptr=%p len=%u)\n",
+			query, obj->buffer.pointer, obj->buffer.length);
+		ret = -EINVAL;
+		goto out_free;
+	}
+
 	bios_return = (struct bios_return *)obj->buffer.pointer;
 	ret = bios_return->return_code;
 
@@ -624,14 +633,6 @@ static int hp_wmi_perform_query(int query, enum hp_wmi_command command,
 	/* Ignore output data of zero size */
 	if (!outsize)
 		goto out_free;
-
-	/* Guard against firmware returning a truncated buffer */
-	if (obj->buffer.length < sizeof(*bios_return)) {
-		pr_warn("query 0x%x returned truncated buffer (len=%u)\n",
-			query, obj->buffer.length);
-		ret = -EINVAL;
-		goto out_free;
-	}
 
 	actual_outsize = min(outsize,
 			     (int)(obj->buffer.length - sizeof(*bios_return)));
@@ -2435,7 +2436,7 @@ static int hp_wmi_apply_fan_settings(struct hp_wmi_hwmon_priv *priv)
 
 	switch (priv->mode) {
 	case PWM_MODE_MAX:
-		if (is_victus_s_thermal_profile())
+		if (priv->fan_speed_available)
 			hp_wmi_get_fan_count_userdefine_trigger();
 		ret = hp_wmi_fan_speed_max_set(1);
 		if (ret < 0)
@@ -2445,7 +2446,7 @@ static int hp_wmi_apply_fan_settings(struct hp_wmi_hwmon_priv *priv)
 		break;
 
 	case PWM_MODE_MANUAL:
-		if (!is_victus_s_thermal_profile())
+		if (!priv->fan_speed_available)
 			return -EOPNOTSUPP;
 		hp_wmi_get_fan_count_userdefine_trigger();
 		schedule_delayed_work(&priv->keep_alive_dwork,
@@ -2495,13 +2496,8 @@ static umode_t hp_wmi_hwmon_is_visible(const void *data,
 		if (attr == hwmon_fan_input) {
 			if (!priv->fan_speed_available)
 				return 0;
-			if (is_victus_s_thermal_profile()) {
-				if (hp_wmi_get_fan_speed_victus_s(channel) >= 0)
-					return 0444;
-			} else {
-				if (hp_wmi_get_fan_speed(channel) >= 0)
-					return 0444;
-			}
+			if (hp_wmi_get_fan_speed_victus_s(channel) >= 0)
+				return 0444;
 		} else if (attr == hwmon_fan_max) {
 			return 0444;
 		} else if (attr == hwmon_fan_target) {
@@ -2532,9 +2528,7 @@ static int hp_wmi_hwmon_read(struct device *dev, enum hwmon_sensor_types type,
 		}
 		if (attr == hwmon_fan_input) {
 			rpm = priv->fan_speed_available
-			      ? (is_victus_s_thermal_profile()
-				 ? hp_wmi_get_fan_speed_victus_s(channel)
-				 : hp_wmi_get_fan_speed(channel))
+			      ? hp_wmi_get_fan_speed_victus_s(channel)
 			      : hp_wmi_get_fan_speed(channel);
 			if (rpm < 0) {
 				ret = rpm;
@@ -2606,7 +2600,7 @@ static int hp_wmi_hwmon_write(struct device *dev, enum hwmon_sensor_types type,
 				ret = -EINVAL;
 				break;
 			}
-			if (!is_victus_s_thermal_profile()) {
+			if (!priv->fan_speed_available) {
 				ret = -EOPNOTSUPP;
 				break;
 			}
@@ -2631,7 +2625,7 @@ static int hp_wmi_hwmon_write(struct device *dev, enum hwmon_sensor_types type,
 			break;
 
 		case PWM_MODE_MANUAL:
-			if (!is_victus_s_thermal_profile()) {
+			if (!priv->fan_speed_available) {
 				ret = -EOPNOTSUPP;
 				break;
 			}
