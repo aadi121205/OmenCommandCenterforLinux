@@ -2219,7 +2219,7 @@ static int thermal_profile_setup(struct platform_device *device)
 
 		err = platform_profile_omen_set_ec(active_platform_profile);
 		if (err < 0)
-			return err;
+			pr_warn("Failed to apply initial omen thermal profile (%d), continuing\n", err);
 
 		ops = &platform_profile_omen_ops;
 
@@ -2255,9 +2255,10 @@ static int thermal_profile_setup(struct platform_device *device)
 				return err;
 		}
 
+		/* *** DÜZELTME: Init sırasındaki hata artık modülün yüklenmesini engellemez *** */
 		err = platform_profile_victus_s_set_ec(active_platform_profile);
 		if (err < 0)
-			return err;
+			pr_warn("Failed to apply initial thermal profile (%d), continuing\n", err);
 
 		ops = &platform_profile_victus_s_ops;
 
