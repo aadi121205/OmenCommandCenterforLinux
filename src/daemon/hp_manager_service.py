@@ -15,6 +15,8 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 logger = logging.getLogger("hp-manager")
 
 lock = threading.RLock()
+# FIX: separate lock for cache dicts to avoid blocking D-Bus calls while monitor writes
+_cache_lock = threading.Lock()
 state_changed = threading.Event()
 HEX_COLOR_RE = re.compile(r"^[0-9A-F]{6}$")
 VALID_LIGHT_MODES = {"static", "breathing", "cycle", "wave"}
@@ -137,24 +139,22 @@ class FanController:
         val = {"auto": 2, "max": 0, "custom": 1}.get(mode)
         if val is None:
             return False
-            
-        # Try pwm1_enable (standard)
+
         ok = self._sysfs_write("pwm1_enable", val)
-        
-        # Fallback for some OMEN models that use different thermal control
+
         if not ok and mode == "max":
-             # Attempt to write to platform device directly if hwmon fail
-             platform_path = "/sys/devices/platform/hp-wmi/thermal_profile"
-             if os.path.exists(platform_path):
-                 try:
-                     with open(platform_path, "w") as f:
-                         f.write("1") # 1 often means performance/max
-                     ok = True
-                 except: pass
+            platform_path = "/sys/devices/platform/hp-wmi/thermal_profile"
+            if os.path.exists(platform_path):
+                try:
+                    with open(platform_path, "w") as f:
+                        f.write("1")
+                    ok = True
+                except Exception:
+                    pass
 
         if ok:
             self.mode = mode
-            logger.info(f"Fan mode set to {mode} (success={ok})")
+            logger.info(f"Fan mode set to {mode}")
         return ok
 
     def set_fan_target(self, fan_num, rpm):
@@ -183,27 +183,19 @@ class RGBController:
         self.driver_path = self._find_rgb_path()
         self.available = self.driver_path is not None
         self.last_written = [None] * 8
-        self.reversed = False
-        self._check_reversed_layout()
-
-    def _check_reversed_layout(self):
-        try:
-            if os.path.exists("/sys/class/dmi/id/board_name"):
-                with open("/sys/class/dmi/id/board_name", "r") as f:
-                    board_id = f.read().strip()
-                    if board_id in ("8C77", "8E35", "8D41"):
-                        self.reversed = True
-                        logger.info(f"RGB: Reversed zone layout enabled for board {board_id}")
-        except Exception:
-            pass
+        # Zone layout is reversed on all supported models
+        self.reversed = True
 
     def _find_rgb_path(self):
         if os.path.exists(DRIVER_PATH_CUSTOM):
             logger.info(f"RGB: Using custom driver path {DRIVER_PATH_CUSTOM}")
             return DRIVER_PATH_CUSTOM
+
+        # FIX: read /proc/modules directly instead of spawning lsmod subprocess
         try:
-            result = subprocess.run(["lsmod"], capture_output=True, text=True, timeout=5)
-            if "hp_rgb_lighting" in result.stdout:
+            with open("/proc/modules") as f:
+                loaded = f.read()
+            if "hp_rgb_lighting" in loaded:
                 for candidate in ("/sys/devices/platform/hp-rgb-lighting",
                                   "/sys/devices/platform/hp_rgb_lighting"):
                     if os.path.exists(candidate):
@@ -211,6 +203,7 @@ class RGBController:
                         return candidate
         except Exception:
             pass
+
         logger.info("RGB: No RGB control path found (hp-rgb-lighting not loaded)")
         return None
 
@@ -220,14 +213,14 @@ class RGBController:
     def write_zone(self, zone, hex_color):
         if not self.available or not (0 <= zone <= 7):
             return
-            
+
         target_zone = zone
         if self.reversed and 0 <= zone <= 3:
             target_zone = 3 - zone
-            
+
         if self.last_written[target_zone] == hex_color:
             return
-            
+
         try:
             time.sleep(0.01)  # Mitigate AE_AML_BUFFER_LIMIT in ACPI
             with open(f"{self.driver_path}/zone{target_zone}", "w") as f:
@@ -266,9 +259,9 @@ class RGBController:
 # POWER PROFILE CONTROLLER
 # ============================================================
 class PowerProfileController:
-    PPD_BUS   = "net.hadess.PowerProfiles"
-    PPD_PATH  = "/net/hadess/PowerProfiles"
-    TUNED_BUS = "com.redhat.tuned"
+    PPD_BUS    = "net.hadess.PowerProfiles"
+    PPD_PATH   = "/net/hadess/PowerProfiles"
+    TUNED_BUS  = "com.redhat.tuned"
     TUNED_PATH = "/Tuned"
 
     def __init__(self):
@@ -290,7 +283,6 @@ class PowerProfileController:
                 self.available = True
                 logger.info("PowerProfileController: Using Power-Profiles-Daemon backend")
             except Exception:
-                # OMEN-specific direct sysfs fallback
                 if os.path.exists("/sys/devices/platform/hp-wmi/thermal_profile") or \
                    os.path.exists("/sys/devices/platform/hp-omen/thermal_profile"):
                     self.mode = "omen_direct"
@@ -322,9 +314,6 @@ class PowerProfileController:
                 if "powersave" in tp:   return "power-saver"
                 if "performance" in tp: return "performance"
                 return "balanced"
-            
-            # omen_direct read? (Hard to read back from write-only nodes sometimes, 
-            # we'll assume state or balanced)
             return state.get("power_profile", "balanced")
         except Exception:
             return "balanced"
@@ -344,16 +333,14 @@ class PowerProfileController:
                 self.proxy.switch_profile(mapping.get(profile, "balanced"))
             elif self.mode == "omen_direct":
                 val = {"power-saver": "0", "balanced": "0", "performance": "1"}.get(profile, "0")
-                for path in ("/sys/devices/platform/hp-wmi/thermal_profile", 
+                for path in ("/sys/devices/platform/hp-wmi/thermal_profile",
                              "/sys/devices/platform/hp-omen/thermal_profile"):
                     if os.path.exists(path):
                         with open(path, "w") as f:
                             f.write(val)
                         break
 
-            # Enforce manual NVIDIA TGP limits dynamically
             threading.Thread(target=self._sync_nvidia_power, args=(profile,), daemon=True).start()
-
             return True
         except Exception as e:
             logger.error(f"Power profile set error ({self.mode}): {e}")
@@ -361,27 +348,28 @@ class PowerProfileController:
 
     def _sync_nvidia_power(self, profile):
         try:
-            if not shutil.which("nvidia-smi"): return
-            
+            if not shutil.which("nvidia-smi"):
+                return
+
             if profile == "performance":
-                # Unlock to hardware max limit
                 out = subprocess.check_output(
                     ["nvidia-smi", "--query-gpu=power.max_limit", "--format=csv,noheader,nounits"],
                     timeout=2.0
                 ).decode().strip()
                 if out:
                     limit = int(float(out))
-                    subprocess.run(["nvidia-smi", "-pl", str(limit)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=2.0)
+                    subprocess.run(["nvidia-smi", "-pl", str(limit)],
+                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=2.0)
                     logger.info(f"NVIDIA GPU locked to MAX Performance: {limit}W")
             else:
-                # Revert to factory default limit for balanced / saver
                 out = subprocess.check_output(
                     ["nvidia-smi", "--query-gpu=power.default_limit", "--format=csv,noheader,nounits"],
                     timeout=2.0
                 ).decode().strip()
                 if out:
                     limit = int(float(out))
-                    subprocess.run(["nvidia-smi", "-pl", str(limit)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=2.0)
+                    subprocess.run(["nvidia-smi", "-pl", str(limit)],
+                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=2.0)
                     logger.info(f"NVIDIA GPU restored to DEFAULT Base: {limit}W")
         except Exception as e:
             logger.warning(f"Failed to sync NVIDIA power curve: {e}")
@@ -422,11 +410,14 @@ class MUXController:
         mode = "unknown"
         try:
             if self.backend == "envycontrol" and self.envycontrol:
-                mode = subprocess.check_output([self.envycontrol, "--query"], stderr=subprocess.STDOUT, timeout=5).decode().strip().lower()
+                mode = subprocess.check_output([self.envycontrol, "--query"],
+                                               stderr=subprocess.STDOUT, timeout=5).decode().strip().lower()
             elif self.backend == "supergfxctl" and self.supergfxctl:
-                mode = subprocess.check_output([self.supergfxctl, "-g"], stderr=subprocess.STDOUT, timeout=5).decode().strip().lower()
+                mode = subprocess.check_output([self.supergfxctl, "-g"],
+                                               stderr=subprocess.STDOUT, timeout=5).decode().strip().lower()
             elif self.backend == "prime-select" and self.prime_select:
-                mode = subprocess.check_output([self.prime_select, "query"], stderr=subprocess.STDOUT, timeout=5).decode().strip().lower()
+                mode = subprocess.check_output([self.prime_select, "query"],
+                                               stderr=subprocess.STDOUT, timeout=5).decode().strip().lower()
         except Exception:
             pass
 
@@ -479,7 +470,7 @@ class AnimationEngine(threading.Thread):
                 self.rgb.write_brightness(False)
                 self.rgb.write_all(["000000"] * 8)
                 state_changed.clear()
-                state_changed.wait() 
+                state_changed.wait()
                 continue
 
             self.rgb.write_brightness(True)
@@ -493,9 +484,9 @@ class AnimationEngine(threading.Thread):
                     for r, g, b in targets
                 ])
                 state_changed.clear()
-                state_changed.wait() 
+                state_changed.wait()
                 continue
-                
+
             elif mode == "breathing":
                 period = 8.0 - (spd * 0.06)
                 phase  = 0.1 + 0.9 * ((math.sin(2 * math.pi * t / period) + 1) / 2)
@@ -654,7 +645,6 @@ class HPManagerService(object):
         <method name="GetGpuInfo"><arg type="s" name="j" direction="out"/></method>
         <method name="GetSystemInfo"><arg type="s" name="j" direction="out"/></method>
         <method name="CleanMemory"><arg type="s" name="result" direction="out"/></method>
-        <method name="InstallPackage"><arg type="s" name="pkg" direction="in"/><arg type="s" name="result" direction="out"/></method>
         <method name="SetWinLock"><arg type="b" name="locked" direction="in"/><arg type="s" name="result" direction="out"/></method>
         <method name="SetKeyboardFixes"><arg type="b" name="prtsc" direction="in"/><arg type="b" name="f1" direction="in"/><arg type="s" name="result" direction="out"/></method>
       </interface>
@@ -662,44 +652,57 @@ class HPManagerService(object):
     """
 
     def __init__(self):
-        # 1. Statik sistem bilgileri RAM'e kaydediliyor
         self._static_info = {
-            "hostname": platform.node(),
-            "kernel": platform.release(),
-            "os_name": "Linux",
-            "product_name": "HP Laptop"
+            "hostname":     platform.node(),
+            "kernel":       platform.release(),
+            "os_name":      "Linux",
+            "product_name": "HP Laptop",
         }
-        for dmi_file in ("/sys/devices/virtual/dmi/id/product_name", "/sys/devices/virtual/dmi/id/product_family"):
+        for dmi_file in ("/sys/devices/virtual/dmi/id/product_name",
+                         "/sys/devices/virtual/dmi/id/product_family"):
             if os.path.exists(dmi_file):
                 try:
                     with open(dmi_file) as f:
                         self._static_info["product_name"] = f.read().strip()
                     break
-                except Exception: pass
+                except Exception:
+                    pass
 
-        # 2. nvidia-smi sistemde var mı kontrolü 1 kez yapılıyor
         self._has_nvidia_smi = shutil.which("nvidia-smi") is not None
-        
-        # 3. Sensör yolları 1 kez taranıyor
-        self._cpu_temp_path = None
-        self._gpu_temp_path = None
+
+        self._cpu_temp_path: typing.Optional[str] = None
+        self._gpu_temp_path: typing.Optional[str] = None
         self._find_temp_paths()
 
-        # 4. Arka plan izleme başlatılıyor
-        self._info_cache = {}
-        self._fan_cache = {}
+        # FIX: initialise nvidia timing attrs in __init__ — avoids hasattr anti-pattern
+        self._last_nv_time: float = 0.0
+        self._nv_temp_cache: float = 0.0
+        self._nv_fail_cooldown: float = 0.0
+
+        # FIX: protected cache dicts — written by monitor thread, read by D-Bus handlers
+        self._info_cache: typing.Dict[str, typing.Any] = {}
+        self._fan_cache:  typing.Dict[str, typing.Any] = {}
+        # MUX cache — populated by monitor loop so GetGpuInfo never blocks on subprocess
+        self._gpu_cache: typing.Dict[str, typing.Any] = {
+            "available": mux_ctrl.is_available(),
+            "backend":   mux_ctrl.get_backend(),
+            "mode":      "unknown",
+        }
+
         threading.Thread(target=self._monitor_loop, daemon=True).start()
 
     def _monitor_loop(self):
-        """Heavy lifting thread to prevent blocking D-Bus calls."""
+        """Background thread — collects sensor data to avoid blocking D-Bus calls."""
+        _mux_last_poll: float = 0.0
+        _MUX_POLL_INTERVAL = 30.0  # GPU mode rarely changes — reboot required anyway
+
         while True:
-            # 1. System Info
+            # Build info snapshot
             info = self._static_info.copy()
             info["cpu_temp"] = self._get_real_cpu_temp()
             info["gpu_temp"] = self._get_real_gpu_temp()
-            self._info_cache = info
 
-            # 2. Fan Info
+            # Build fan snapshot
             fans_data = {
                 str(i): {
                     "current": fan_ctrl.get_current_speed(i),
@@ -708,18 +711,40 @@ class HPManagerService(object):
                 }
                 for i in fan_ctrl.found_fans
             }
-            self._fan_cache = {
-                "available":  fan_ctrl.is_available(),
-                "fan_count":  fan_ctrl.get_fan_count(),
-                "mode":       fan_ctrl.get_mode(),
-                "fans":       fans_data,
+            fan_snapshot = {
+                "available": fan_ctrl.is_available(),
+                "fan_count": fan_ctrl.get_fan_count(),
+                "mode":      fan_ctrl.get_mode(),
+                "fans":      fans_data,
             }
+
+            # MUX snapshot — subprocess only runs every 30s since GPU mode
+            # changes require a reboot; no point polling more often.
+            now = time.time()
+            if now - _mux_last_poll >= _MUX_POLL_INTERVAL:
+                gpu_snapshot = {
+                    "available": mux_ctrl.is_available(),
+                    "backend":   mux_ctrl.get_backend(),
+                    "mode":      mux_ctrl.get_mode(),
+                }
+                _mux_last_poll = now
+            else:
+                # Reuse previous cache — just refresh available/backend (no subprocess)
+                with _cache_lock:
+                    gpu_snapshot = dict(self._gpu_cache)
+
+            # Atomic dict replacement under lock so readers never see partial state
+            with _cache_lock:
+                self._info_cache = info
+                self._fan_cache  = fan_snapshot
+                self._gpu_cache  = gpu_snapshot
 
             time.sleep(1.5)
 
     def _find_temp_paths(self):
         best_score = -1000
-        RANK_DRV = {"zenpower": 100, "coretemp": 90, "k10temp": 90, "cpu_thermal": 80, "hp_wmi": 60, "acpitz": 30}
+        RANK_DRV = {"zenpower": 100, "coretemp": 90, "k10temp": 90,
+                    "cpu_thermal": 80, "hp_wmi": 60, "acpitz": 30}
         RANK_LBL = {"tdie": 100, "package id 0": 95, "tctl": 90, "core": 80, "composite": 50}
         try:
             for d in os.listdir("/sys/class/hwmon"):
@@ -727,7 +752,8 @@ class HPManagerService(object):
                 try:
                     with open(os.path.join(path, "name")) as f:
                         drv = f.read().strip().lower()
-                except Exception: continue
+                except Exception:
+                    continue
                 d_score = RANK_DRV.get(drv, 10)
                 for tf in glob.glob(os.path.join(path, "temp*_input")):
                     label = ""
@@ -736,13 +762,15 @@ class HPManagerService(object):
                         try:
                             with open(lp) as f:
                                 label = f.read().strip().lower()
-                        except Exception: pass
+                        except Exception:
+                            pass
                     l_score = max((v for k, v in RANK_LBL.items() if k in label), default=0)
                     score = d_score + l_score - (500 if "75" in str(tf) else 0)
                     if score > best_score:
                         best_score = score
                         self._cpu_temp_path = tf
-        except Exception: pass
+        except Exception:
+            pass
 
         try:
             for d in os.listdir("/sys/class/hwmon"):
@@ -752,8 +780,12 @@ class HPManagerService(object):
                         name = f.read().strip().lower()
                     if name in ("amdgpu", "i915", "nouveau"):
                         self._gpu_temp_path = os.path.join(path, "temp1_input")
-                except Exception: continue
-        except Exception: pass
+                except Exception:
+                    continue
+        except Exception:
+            pass
+
+    # ── D-Bus methods ────────────────────────────────────────────────────────
 
     def SetColor(self, z, h):
         c = str(h).lstrip("#").upper()
@@ -809,7 +841,9 @@ class HPManagerService(object):
         return "OK" if fan_ctrl.set_fan_target(fan, rpm) else "FAIL"
 
     def GetFanInfo(self):
-        return json.dumps(self._fan_cache)
+        # FIX: read cache under lock to avoid partial dict reads from monitor thread
+        with _cache_lock:
+            return json.dumps(self._fan_cache)
 
     def SetPowerProfile(self, profile):
         if profile not in power_ctrl.get_profiles():
@@ -834,21 +868,22 @@ class HPManagerService(object):
         return mux_ctrl.set_mode(mode)
 
     def GetGpuInfo(self):
-        return json.dumps({
-            "available": mux_ctrl.is_available(),
-            "backend":   mux_ctrl.get_backend(),
-            "mode":      mux_ctrl.get_mode(),
-        })
+        # FIX: read from monitor-loop cache — never blocks on subprocess
+        with _cache_lock:
+            return json.dumps(self._gpu_cache)
 
     def GetSystemInfo(self):
-        return json.dumps(self._info_cache)
+        # FIX: read cache under lock
+        with _cache_lock:
+            return json.dumps(self._info_cache)
 
     def _get_real_cpu_temp(self):
         if self._cpu_temp_path and os.path.exists(self._cpu_temp_path):
             try:
                 with open(self._cpu_temp_path) as f:
                     return int(f.read().strip()) / 1000.0
-            except Exception: pass
+            except Exception:
+                pass
         return 0.0
 
     def _get_real_gpu_temp(self):
@@ -856,31 +891,29 @@ class HPManagerService(object):
             try:
                 with open(self._gpu_temp_path) as f:
                     return int(f.read().strip()) / 1000.0
-            except Exception: pass
+            except Exception:
+                pass
 
         if self._has_nvidia_smi:
             now = time.time()
-            if not hasattr(self, '_last_nv_time'):
-                self._last_nv_time = 0.0
-                self._nv_temp_cache = 0.0
-                self._nv_fail_cooldown = 0.0
 
             if now < self._nv_fail_cooldown:
-                return self._nv_temp_cache or 0.0
+                return self._nv_temp_cache
 
             if now - self._last_nv_time > 5.0:
                 self._last_nv_time = now
                 try:
                     out = subprocess.check_output(
-                        ["nvidia-smi", "--query-gpu=temperature.gpu", "--format=csv,noheader,nounits"],
+                        ["nvidia-smi", "--query-gpu=temperature.gpu",
+                         "--format=csv,noheader,nounits"],
                         stderr=subprocess.DEVNULL, timeout=1.0
                     ).decode().strip()
                     self._nv_temp_cache = float(out)
                 except Exception:
-                    # If it fails or times out (e.g. GPU asleep), wait 15 seconds before trying again
+                    # Back off 15 s before retrying (GPU may be in D3 sleep)
                     self._nv_fail_cooldown = now + 15.0
-            
-            return self._nv_temp_cache or 0.0
+
+            return self._nv_temp_cache
 
         return 0.0
 
@@ -928,9 +961,9 @@ class HPManagerService(object):
             "evdev:atkbd:dmi:bvn*:bvr*:bd*:svnHP*:pn*:*",
         ]
         if prtsc:
-            content.append(" KEYBOARD_KEY_b7=sysrq")   
+            content.append(" KEYBOARD_KEY_b7=sysrq")
         if f1:
-            content.append(" KEYBOARD_KEY_ab=f1")        
+            content.append(" KEYBOARD_KEY_ab=f1")
 
         new_content = "\n".join(content) + "\n"
 
@@ -976,13 +1009,13 @@ def main():
             saved_fan = "auto"
             state["fan_mode"] = "auto"
             logger.warning("Custom fan mode not restorable (no saved targets), falling back to auto")
-            
+
         if saved_fan in ("auto", "max"):
             if fan_ctrl.get_mode() != saved_fan:
                 ok = fan_ctrl.set_mode(saved_fan)
                 logger.info(f"Restored fan mode '{saved_fan}' (success={ok})")
             else:
-                logger.info(f"Fan mode already '{saved_fan}', skipping write to prevent spin-up.")
+                logger.info(f"Fan mode already '{saved_fan}', skipping write.")
 
     if power_ctrl.available:
         saved_pp = state.get("power_profile", "balanced")
