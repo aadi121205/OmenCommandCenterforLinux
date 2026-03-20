@@ -1,5 +1,5 @@
 
- # OMEN Command Center for Linux v1.1.6 #
+ # OMEN Command Center for Linux v1.2.0 #
 <p align="center">
   <img src="images/omenapplogo.png" alt="Logo" width="250">
 
@@ -18,13 +18,12 @@
 
 **OMEN Command Center for Linux** is a native Linux application designed to unlock the full potential of HP Omen and Victus series laptops. It serves as an open-source alternative to the official OMEN Gaming Hub, providing essential controls in a modern, user-friendly interface.
 
-**New in v1.1.6:**
+**New in v1.2.0:**
 
-- 🚀 **OMEN 16-wf & 16-ap Support**: Added robust WMI support for OMEN 16 14th Gen and newer models (Board IDs 8C77, 8E35, 8D41).
-- 🌪️ **Custom Fan Control Fixes**: Restored and forced manual fan control support (`force_fan_control_support`) specifically for modern boards to enable seamless custom curve tuning.
-- 🌡️ **ACPI & Thermal Profile Resolution**: Resolved `AE_AML_BUFFER_LIMIT` crashes by implementing precise RGB write delays, and fixed the "Platform Profile: Not Supported" error by properly aligning the Embedded Controller (EC) thermal offsets. 
-- 🌈 **Reversed RGB Layout Engine**: Built an automatic zone-mapping engine to correct the reversed left-to-right keyboard lighting behavior on specific OMEN variants.
-- ⚡ **Background Poller Efficiency**: Eliminated UI stuttering and high CPU spikes by shifting all `nvidia-smi` and ACPI sensor polling strictly to non-blocking background threads with backoff cooldowns.
+- 🛠 **Kernel Driver & DKMS**: Fixed -22 (EINVAL) probe errors on newer Omen/Victus boards (**8C77, 8D41**), added BIOS buffer validation to prevent kernel panics, and optimized fan speed polling to reduce `dmesg` noise.
+- 🔌 **D-Bus & Hardware Service**: Native MUX control for GPU switching (**Beta Stage**), auto-detection for Advanced Optimus, and non-blocking background polling for better GUI responsiveness.
+- 🎨 **UI & UX Refinements**: Redesigned MUX interface, fixed reversed RGB layouts by default, and optimized dashboard refresh logic for improved memory efficiency.
+- 📦 **Installer & Setup**: Added intelligence to detect existing power managers (TLP/tuned), implemented atomic self-restarting updates, and transitioned to `modprobe` for robust driver management.
 
 
 ## ✨ Features
