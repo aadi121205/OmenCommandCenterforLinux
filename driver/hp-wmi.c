@@ -160,7 +160,13 @@ static const char *const omen_thermal_profile_boards[] = {
 	"878A", "878B", "878C", "87B5", "886B", "886C", "88C8", "88CB",
 	"88D1", "88D2", "88F4", "88F5", "88F6", "88F7", "88FD", "88FE",
 	"88FF", "8900", "8901", "8902", "8912", "8917", "8918", "8949",
-	"894A", "89EB", "8A15", "8A42", "8BAD", "8C77", "8E35", "8E41",
+	"894A", "89EB", "8A15", "8A42", "8BAD", "8C77", "8D41", "8E35",
+	"8E41",
+	/*
+	 * FIX: 8D41 (HP Omen Max) added here so is_omen_thermal_profile()
+	 * returns true and the Victus S fan-table query is skipped during
+	 * probe, preventing a spurious -EINVAL/-22 failure.
+	 */
 };
 
 /*
@@ -1109,9 +1115,15 @@ static bool hp_wmi_gpu_mode_supported(void)
 	char system_device_mode[4] = {0};
 	int ret;
 
+	/*
+	 * FIX: use zero_if_sup() to be consistent with all other READ calls
+	 * using HPWMI_SYSTEM_DEVICE_MODE; passing a hard sizeof() on devices
+	 * with zero_insize_support caused a spurious failure that made the
+	 * graphics_mode sysfs attribute invisible.
+	 */
 	ret = hp_wmi_perform_query(HPWMI_SYSTEM_DEVICE_MODE, HPWMI_READ,
 				   system_device_mode,
-				   sizeof(system_device_mode),
+				   zero_if_sup(system_device_mode),
 				   sizeof(system_device_mode));
 	if (ret < 0)
 		return false;
@@ -1143,8 +1155,15 @@ static ssize_t graphics_mode_store(struct device *dev,
 				   struct device_attribute *attr,
 				   const char *buf, size_t count)
 {
+	/*
+	 * FIX: use a proper local buffer and pass its real size to
+	 * hp_wmi_perform_query for the WRITE direction.  Do NOT use
+	 * zero_if_sup() here — that macro is for READ insize only; passing
+	 * insize=0 on a WRITE causes firmware to return
+	 * HPWMI_RET_INVALID_PARAMETERS (0x05) → -EINVAL → errno 22.
+	 */
+	u8 mode_buf[128] = {0};
 	u32 tmp;
-	u8 buffer[128] = {0};
 	int ret;
 
 	ret = kstrtou32(buf, 10, &tmp);
@@ -1155,10 +1174,10 @@ static ssize_t graphics_mode_store(struct device *dev,
 	if (tmp > 2)
 		return -EINVAL;
 
-	buffer[0] = tmp;
+	mode_buf[0] = (u8)tmp;
 
 	ret = hp_wmi_perform_query(HPWMI_SYSTEM_DEVICE_MODE, HPWMI_WRITE,
-				   buffer, sizeof(buffer), 0);
+				   mode_buf, sizeof(mode_buf), 0);
 	if (ret)
 		return ret < 0 ? ret : -EINVAL;
 
@@ -1632,13 +1651,15 @@ static bool has_omen_thermal_profile_ec_timer(void)
 			    board_name) >= 0;
 }
 
-inline int omen_thermal_profile_ec_flags_set(
+/* FIX: was missing 'static', causing external linkage and potential linker conflicts */
+static inline int omen_thermal_profile_ec_flags_set(
 	enum hp_thermal_profile_omen_flags flags)
 {
 	return ec_write(HP_OMEN_EC_THERMAL_PROFILE_FLAGS_OFFSET, flags);
 }
 
-inline int omen_thermal_profile_ec_timer_set(u8 value)
+/* FIX: was missing 'static', causing external linkage and potential linker conflicts */
+static inline int omen_thermal_profile_ec_timer_set(u8 value)
 {
 	return ec_write(HP_OMEN_EC_THERMAL_PROFILE_TIMER_OFFSET, value);
 }
@@ -2772,14 +2793,41 @@ static int hp_wmi_setup_fan_settings(struct hp_wmi_hwmon_priv *priv)
 
 	priv->mode = PWM_MODE_AUTO;
 
+	/*
+	 * Fan table queries and Victus S fan speed commands only apply to
+	 * Victus S-series boards.
+	 *
+	 * Omen boards are excluded unconditionally — even when
+	 * force_fan_control_support=1 — because Omen hardware does not
+	 * support the Victus S GM fan speed commands (0x2D/0x2E/0x2F).
+	 * Forcing those commands on an Omen board would silently fail or
+	 * produce undefined behaviour.  Omen max-fan mode (PWM_MODE_MAX)
+	 * is still available via hp_wmi_fan_speed_max_set() regardless.
+	 *
+	 * force_fan_control_support is only meaningful for non-Omen boards
+	 * that are not yet in victus_s_thermal_profile_boards but whose
+	 * firmware does support the Victus S GM commands.
+	 */
+	if (is_omen_thermal_profile())
+		return 0;
+
 	if (!is_victus_s_thermal_profile())
 		return 0;
 
 	ret = hp_wmi_perform_query(HPWMI_VICTUS_S_GET_FAN_TABLE_QUERY, HPWMI_GM,
 				   &fan_data, 4, sizeof(fan_data));
 	if (ret) {
-		if (!force_fan_control_support)
-			return ret;
+		if (!force_fan_control_support) {
+			/*
+			 * FIX: degrade gracefully instead of returning an
+			 * error that kills probe.  The board is in the Victus S
+			 * list but its EC doesn't support the fan table query
+			 * (e.g. future boards with omen_v1 params).  Manual fan
+			 * control will simply be unavailable.
+			 */
+			pr_info("Fan table query unsupported on this board, manual fan control unavailable\n");
+			return 0;
+		}
 
 		/*
 		 * User forced fan control support but the EC query failed.
@@ -2787,14 +2835,16 @@ static int hp_wmi_setup_fan_settings(struct hp_wmi_hwmon_priv *priv)
 		 */
 		pr_warn("Failed to get fan table (%d), falling back to 5000 RPM safe limits\n",
 			ret);
-		priv->min_rpm       = 0;
-		priv->max_rpm       = 50;  /* 5000 RPM in firmware units */
-		priv->gpu_delta     = 0;
-		priv->max_rpms[0]   = 5000;
-		priv->max_rpms[1]   = 5000;
-		priv->target_rpms[0] = 0;
-		priv->target_rpms[1] = 0;
-		priv->prev_mode     = -1;
+		priv->min_rpm             = 0;
+		priv->max_rpm             = 50;  /* 5000 RPM in firmware units */
+		priv->gpu_delta           = 0;
+		priv->max_rpms[0]         = 5000;
+		priv->max_rpms[1]         = 5000;
+		priv->target_rpms[0]      = 0;
+		priv->target_rpms[1]      = 0;
+		priv->prev_mode           = -1;
+		/* FIX: fan_speed_available must be set so manual mode works */
+		priv->fan_speed_available = true;
 		return 0;
 	}
 
