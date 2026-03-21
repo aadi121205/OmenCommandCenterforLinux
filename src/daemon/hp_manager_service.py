@@ -185,6 +185,13 @@ class RGBController:
         self.last_written = [None] * 8
         # Zone layout is reversed on all supported models
         self.reversed = True
+        self._fds = {}
+        if self.available:
+            for i in range(8):
+                try:
+                    self._fds[i] = open(f"{self.driver_path}/zone{i}", "w")
+                except Exception:
+                    pass
 
     def _find_rgb_path(self):
         if os.path.exists(DRIVER_PATH_CUSTOM):
@@ -222,13 +229,25 @@ class RGBController:
             return
 
         try:
-            time.sleep(0.01)  # Mitigate AE_AML_BUFFER_LIMIT in ACPI
-            with open(f"{self.driver_path}/zone{target_zone}", "w") as f:
-                f.write(hex_color)
-                f.flush()
+            time.sleep(0.005)  # Mitigate AE_AML_BUFFER_LIMIT in ACPI (reduced to 5ms)
+            fd = self._fds.get(target_zone)
+            if fd:
+                fd.seek(0)
+                fd.write(hex_color)
+                fd.flush()
+            else:
+                with open(f"{self.driver_path}/zone{target_zone}", "w") as f:
+                    f.write(hex_color)
             self.last_written[target_zone] = hex_color
         except Exception:
-            pass
+            # Reopen in case of fd failure
+            try:
+                with open(f"{self.driver_path}/zone{target_zone}", "w") as f:
+                    f.write(hex_color)
+                self.last_written[target_zone] = hex_color
+                self._fds[target_zone] = open(f"{self.driver_path}/zone{target_zone}", "w")
+            except Exception:
+                pass
 
     def write_all(self, hex_list):
         for i, hc in enumerate(hex_list[:8]):
@@ -497,7 +516,7 @@ class MUXController:
 # ANIMATION ENGINE
 # ============================================================
 class AnimationEngine(threading.Thread):
-    FRAME_TIME = 0.05  # 20 fps
+    FRAME_TIME = 0.1  # 10 fps (reduces CPU/ACPI load from 20 fps)
 
     def __init__(self, rgb_ctrl):
         super().__init__(daemon=True)
