@@ -225,7 +225,7 @@ class RGBController:
             return
 
         try:
-            time.sleep(0.005)  # Mitigate AE_AML_BUFFER_LIMIT in ACPI
+            time.sleep(0.001)  # Mitigate AE_AML_BUFFER_LIMIT in ACPI (1ms is sufficient)
             fd = self._fds.get(target_zone)
             if fd:
                 fd.seek(0)
@@ -505,11 +505,11 @@ class MUXController:
 class AnimationEngine(threading.Thread):
     # FIX: Separate frame times per mode.
     # static/wave keep 10 FPS; breathing/cycle drop to 5 FPS — imperceptible to human eye.
-    FRAME_TIME          = 0.1   # 10 FPS  — wave, fallback
-    FRAME_TIME_SLOW     = 0.2   # 5 FPS   — breathing, cycle
+    FRAME_TIME          = 0.1    # 10 FPS  — wave, fallback
+    FRAME_TIME_SLOW     = 0.333  # 3 FPS   — breathing, cycle (imperceptible to human eye)
     # FIX: Skip ACPI write when uniform color changed less than this threshold (0-255).
     # Avoids redundant sysfs calls when phase delta is tiny.
-    _COLOR_THRESHOLD    = 2
+    _COLOR_THRESHOLD    = 5
 
     def __init__(self, rgb_ctrl):
         super().__init__(daemon=True)
