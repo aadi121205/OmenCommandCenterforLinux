@@ -40,7 +40,6 @@ class FanController:
             self._read_current_mode()
 
     def _find_hwmon(self):
-        # Try 'hp' first (standard hp-wmi)
         for path in glob.glob("/sys/class/hwmon/hwmon*/name"):
             try:
                 with open(path, 'r') as f:
@@ -51,7 +50,6 @@ class FanController:
             except Exception:
                 pass
 
-        # Try platform paths
         for platform_name in ("hp-wmi", "hp_wmi", "hp-omen"):
             platform_hwmon = f"/sys/devices/platform/{platform_name}/hwmon"
             if os.path.exists(platform_hwmon):
@@ -183,7 +181,6 @@ class RGBController:
         self.driver_path = self._find_rgb_path()
         self.available = self.driver_path is not None
         self.last_written = [None] * 8
-        # Zone layout is reversed on all supported models
         self.reversed = True
         self._fds = {}
         if self.available:
@@ -198,7 +195,6 @@ class RGBController:
             logger.info(f"RGB: Using custom driver path {DRIVER_PATH_CUSTOM}")
             return DRIVER_PATH_CUSTOM
 
-        # FIX: read /proc/modules directly instead of spawning lsmod subprocess
         try:
             with open("/proc/modules") as f:
                 loaded = f.read()
@@ -229,7 +225,7 @@ class RGBController:
             return
 
         try:
-            time.sleep(0.005)  # Mitigate AE_AML_BUFFER_LIMIT in ACPI (reduced to 5ms)
+            time.sleep(0.005)  # Mitigate AE_AML_BUFFER_LIMIT in ACPI
             fd = self._fds.get(target_zone)
             if fd:
                 fd.seek(0)
@@ -240,7 +236,6 @@ class RGBController:
                     f.write(hex_color)
             self.last_written[target_zone] = hex_color
         except Exception:
-            # Reopen in case of fd failure
             try:
                 with open(f"{self.driver_path}/zone{target_zone}", "w") as f:
                     f.write(hex_color)
@@ -398,13 +393,9 @@ class PowerProfileController:
 # MUX CONTROLLER
 # ============================================================
 
-# Path exposed by hp-wmi driver via HPWMI_SYSTEM_DEVICE_MODE (0x40).
-# Values: 0 = integrated, 1 = discrete, 2 = hybrid.
-# This is a direct BIOS call — no third-party tool required.
-# NOTE: A reboot is required for the change to take effect on most models.
 _BIOS_MUX_PATH = "/sys/devices/platform/hp-wmi/graphics_mode"
 
-_BIOS_MUX_READ = {0: "integrated", 1: "discrete", 2: "hybrid"}
+_BIOS_MUX_READ  = {0: "integrated", 1: "discrete", 2: "hybrid"}
 _BIOS_MUX_WRITE = {"integrated": 0, "discrete": 1, "hybrid": 2}
 
 
@@ -419,7 +410,6 @@ class MUXController:
         self._detect_backend()
 
     def _detect_backend(self):
-        # Prefer the direct BIOS path — no external tools needed.
         if os.path.exists(_BIOS_MUX_PATH):
             self.backend = "bios"
         elif self.envycontrol:
@@ -473,9 +463,6 @@ class MUXController:
                 with open(_BIOS_MUX_PATH, "w") as f:
                     f.write(str(val))
 
-                # Check if the change took effect immediately (Advanced Optimus).
-                # Non-Advanced Optimus boards latch the value at next boot — the
-                # readback still returns the old value until reboot.
                 time.sleep(0.1)
                 try:
                     with open(_BIOS_MUX_PATH) as f:
@@ -516,12 +503,25 @@ class MUXController:
 # ANIMATION ENGINE
 # ============================================================
 class AnimationEngine(threading.Thread):
-    FRAME_TIME = 0.1  # 10 fps (reduces CPU/ACPI load from 20 fps)
+    # FIX: Separate frame times per mode.
+    # static/wave keep 10 FPS; breathing/cycle drop to 5 FPS — imperceptible to human eye.
+    FRAME_TIME          = 0.1   # 10 FPS  — wave, fallback
+    FRAME_TIME_SLOW     = 0.2   # 5 FPS   — breathing, cycle
+    # FIX: Skip ACPI write when uniform color changed less than this threshold (0-255).
+    # Avoids redundant sysfs calls when phase delta is tiny.
+    _COLOR_THRESHOLD    = 2
 
     def __init__(self, rgb_ctrl):
         super().__init__(daemon=True)
         self.rgb = rgb_ctrl
         self.running = True
+        # FIX: Track last written uniform color to skip redundant writes in breathing/cycle.
+        self._last_uniform: tuple = (-1, -1, -1)
+
+    def _uniform_changed(self, new: tuple) -> bool:
+        """Returns True only when the new color differs enough to be worth writing."""
+        return any(abs(n - o) > self._COLOR_THRESHOLD
+                   for n, o in zip(new, self._last_uniform))
 
     def run(self):
         logger.info("Animation engine started")
@@ -535,46 +535,79 @@ class AnimationEngine(threading.Thread):
                 cols = [str(c) for c in state.get("colors", ["FF0000"] * 8)]
                 d    = str(state.get("direction", "ltr"))
 
+            # ── Power off ────────────────────────────────────────────────────
             if not pwr:
                 self.rgb.write_brightness(False)
                 self.rgb.write_all(["000000"] * 8)
+                self._last_uniform = (-1, -1, -1)
                 state_changed.clear()
                 state_changed.wait()
                 continue
 
             self.rgb.write_brightness(True)
             t = time.time()
-            targets = []
 
+            # ── Static ───────────────────────────────────────────────────────
             if mode == "static":
                 targets = [self._hex_to_rgb(c) for c in cols]
                 self.rgb.write_all([
                     f"{int(r * bri):02X}{int(g * bri):02X}{int(b * bri):02X}"
                     for r, g, b in targets
                 ])
+                self._last_uniform = (-1, -1, -1)
                 state_changed.clear()
                 state_changed.wait()
                 continue
 
+            # ── Breathing ────────────────────────────────────────────────────
             elif mode == "breathing":
                 period = 8.0 - (spd * 0.06)
                 phase  = 0.1 + 0.9 * ((math.sin(2 * math.pi * t / period) + 1) / 2)
                 base   = self._hex_to_rgb(cols[0])
-                targets = [(int(base[0] * phase), int(base[1] * phase), int(base[2] * phase))] * 8
+                new_color = (
+                    int(base[0] * phase * bri),
+                    int(base[1] * phase * bri),
+                    int(base[2] * phase * bri),
+                )
+                # FIX: Only write when color changed enough to be perceptible.
+                if self._uniform_changed(new_color):
+                    self._last_uniform = new_color
+                    hx = f"{new_color[0]:02X}{new_color[1]:02X}{new_color[2]:02X}"
+                    self.rgb.write_all([hx] * 8)
+
+                sleep_time = max(self.FRAME_TIME_SLOW - (time.time() - loop_start), 0.001)
+                if state_changed.wait(timeout=sleep_time):
+                    state_changed.clear()
+                continue
+
+            # ── Cycle ────────────────────────────────────────────────────────
             elif mode == "cycle":
                 hue = (t * (spd * 0.003)) % 1.0
-                r, g, b = colorsys.hsv_to_rgb(hue, 1.0, 1.0)
-                targets = [(int(r * 255), int(g * 255), int(b * 255))] * 8
+                r, g, b = colorsys.hsv_to_rgb(hue, 1.0, bri)
+                new_color = (int(r * 255), int(g * 255), int(b * 255))
+                # FIX: Only write when color changed enough to be perceptible.
+                if self._uniform_changed(new_color):
+                    self._last_uniform = new_color
+                    hx = f"{new_color[0]:02X}{new_color[1]:02X}{new_color[2]:02X}"
+                    self.rgb.write_all([hx] * 8)
+
+                sleep_time = max(self.FRAME_TIME_SLOW - (time.time() - loop_start), 0.001)
+                if state_changed.wait(timeout=sleep_time):
+                    state_changed.clear()
+                continue
+
+            # ── Wave ─────────────────────────────────────────────────────────
             elif mode == "wave":
+                targets = []
                 for i in range(8):
                     offset = (i * 0.15) if d == "ltr" else ((7 - i) * 0.15)
-                    r, g, b = colorsys.hsv_to_rgb((t * spd * 0.007 + offset) % 1.0, 1.0, 1.0)
+                    r, g, b = colorsys.hsv_to_rgb((t * spd * 0.007 + offset) % 1.0, 1.0, bri)
                     targets.append((int(r * 255), int(g * 255), int(b * 255)))
-
-            self.rgb.write_all([
-                f"{int(r * bri):02X}{int(g * bri):02X}{int(b * bri):02X}"
-                for r, g, b in targets
-            ])
+                self.rgb.write_all([
+                    f"{r:02X}{g:02X}{b:02X}"
+                    for r, g, b in targets
+                ])
+                self._last_uniform = (-1, -1, -1)
 
             sleep_time = max(self.FRAME_TIME - (time.time() - loop_start), 0.001)
             if state_changed.wait(timeout=sleep_time):
@@ -743,15 +776,12 @@ class HPManagerService(object):
         self._gpu_temp_path: typing.Optional[str] = None
         self._find_temp_paths()
 
-        # FIX: initialise nvidia timing attrs in __init__ — avoids hasattr anti-pattern
         self._last_nv_time: float = 0.0
         self._nv_temp_cache: float = 0.0
         self._nv_fail_cooldown: float = 0.0
 
-        # FIX: protected cache dicts — written by monitor thread, read by D-Bus handlers
         self._info_cache: typing.Dict[str, typing.Any] = {}
         self._fan_cache:  typing.Dict[str, typing.Any] = {}
-        # MUX cache — populated by monitor loop so GetGpuInfo never blocks on subprocess
         self._gpu_cache: typing.Dict[str, typing.Any] = {
             "available": mux_ctrl.is_available(),
             "backend":   mux_ctrl.get_backend(),
@@ -760,19 +790,16 @@ class HPManagerService(object):
 
         threading.Thread(target=self._monitor_loop, daemon=True).start()
 
-
     def _monitor_loop(self):
         """Background thread — collects sensor data to avoid blocking D-Bus calls."""
         _mux_last_poll: float = 0.0
-        _MUX_POLL_INTERVAL = 30.0  # GPU mode rarely changes — reboot required anyway
+        _MUX_POLL_INTERVAL = 30.0
 
         while True:
-            # Build info snapshot
             info = self._static_info.copy()
             info["cpu_temp"] = self._get_real_cpu_temp()
             info["gpu_temp"] = self._get_real_gpu_temp()
 
-            # Build fan snapshot
             fans_data = {
                 str(i): {
                     "current": fan_ctrl.get_current_speed(i),
@@ -788,8 +815,6 @@ class HPManagerService(object):
                 "fans":      fans_data,
             }
 
-            # MUX snapshot — subprocess only runs every 30s since GPU mode
-            # changes require a reboot; no point polling more often.
             now = time.time()
             if now - _mux_last_poll >= _MUX_POLL_INTERVAL:
                 gpu_snapshot = {
@@ -799,11 +824,9 @@ class HPManagerService(object):
                 }
                 _mux_last_poll = now
             else:
-                # Reuse previous cache — just refresh available/backend (no subprocess)
                 with _cache_lock:
                     gpu_snapshot = dict(self._gpu_cache)
 
-            # Atomic dict replacement under lock so readers never see partial state
             with _cache_lock:
                 self._info_cache = info
                 self._fan_cache  = fan_snapshot
@@ -911,7 +934,6 @@ class HPManagerService(object):
         return "OK" if fan_ctrl.set_fan_target(fan, rpm) else "FAIL"
 
     def GetFanInfo(self):
-        # FIX: read cache under lock to avoid partial dict reads from monitor thread
         with _cache_lock:
             return json.dumps(self._fan_cache)
 
@@ -938,12 +960,10 @@ class HPManagerService(object):
         return mux_ctrl.set_mode(mode)
 
     def GetGpuInfo(self):
-        # FIX: read from monitor-loop cache — never blocks on subprocess
         with _cache_lock:
             return json.dumps(self._gpu_cache)
 
     def GetSystemInfo(self):
-        # FIX: read cache under lock
         with _cache_lock:
             return json.dumps(self._info_cache)
 
@@ -980,7 +1000,6 @@ class HPManagerService(object):
                     ).decode().strip()
                     self._nv_temp_cache = float(out)
                 except Exception:
-                    # Back off 15 s before retrying (GPU may be in D3 sleep)
                     self._nv_fail_cooldown = now + 15.0
 
             return self._nv_temp_cache
