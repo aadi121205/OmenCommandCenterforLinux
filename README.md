@@ -42,9 +42,10 @@
 - **Max Mode**: Forces fans to maximum speed for intensive tasks.
 - **Custom Mode**: Drag-and-drop curve editor to create your own fan profiles.
 
-### 🎮 GPU MUX Switch
+### 🎮 GPU MUX Switch (BETA)
 - Switch between **Hybrid**, **Discrete**, and **Integrated** modes.
-- *Note: Requires compatible tools like `envycontrol`, `supergfxctl`, or `prime-select`.*
+- ⚠️ **Warning**: MUX Switch functionality is currently in **Beta**. We are actively working to resolve remaining "Invalid Argument" (Errno 22) errors on some hardware versions.
+- **Recommendation**: For the most stable GPU switching experience, we currently recommend using dedicated tools like [`envycontrol`](https://github.com/bayasandaa/envycontrol) or `prime-select`.
 
 ## 🚀 Installation
 
