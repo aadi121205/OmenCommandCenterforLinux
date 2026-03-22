@@ -1,5 +1,5 @@
 
- # OMEN Command Center for Linux v1.2.1 #
+ # OMEN Command Center for Linux v1.2.2 #
 <p align="center">
   <img src="images/omenapplogo.png" alt="Logo" width="250">
 
@@ -18,13 +18,11 @@
 
 **OMEN Command Center for Linux** is a native Linux application designed to unlock the full potential of HP Omen and Victus series laptops. It serves as an open-source alternative to the official OMEN Gaming Hub, providing essential controls in a modern, user-friendly interface.
 
-**New in v1.2.1:**
+**New in v1.2.2:**
 
-- 🛠 **Kernel Driver**: Fixed `-22` (EINVAL) probe crash on **8D41** (OMEN MAX 16-ah0xxx). Fixed MUX switch `Invalid Argument` on **8C77** by correcting WMI write buffer size.
-- ⌨️ **Touchpad Fix**: Resolved conflicts with touchpad toggle keys (F11/F12). Redundant events are now handled at the kernel level.
-- ⚠️ **MUX Beta**: MUX Switch functionality is in **BETA**. We recommend `envycontrol` or `prime-select` for the most stable experience while we work on further fixes.
-- 📦 **DKMS & Installer**: Resolved `Module already installed` errors during kernel updates and fixed AUR `PKGBUILD` issues.
-- ⚡ **Performance**: Removed background OMEN Key listener thread to reduce idle CPU usage. Users are encouraged to create a custom shortcut in their Desktop Environment (e.g., binding the OMEN key to `hp-manager`) for a more efficient and responsive experience.
+- 🌪️ **Fan Control**: Fixed 0 RPM reporting issue on **8BA9** (OMEN 16-wd0xxx). The driver now correctly uses the newer Victus S-style fan speed queries for these models.
+- 🎮 **MUX Backend**: Added manual backend selection in MUX settings. Users can now explicitly choose between **HP WMI (direct)**, `envycontrol`, `supergfxctl`, or `prime-select` instead of relying on auto-detection.
+- 🛠 **Kernel Driver**: Fixed `-22` (EINVAL) probe crash on **8D41** (OMEN MAX 16-ah0xxx). Fixed MUX switch `Invalid Argument` on **8C77**.
 
 
 ## ✨ Features

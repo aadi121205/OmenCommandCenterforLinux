@@ -55,6 +55,7 @@ TRANSLATIONS = {
         "restart": "Yeniden Başlat",
         "restart_confirm": "GPU modunu '{mode}' olarak değiştirmek için sistem yeniden başlatılacak. Devam edilsin mi?",
         "mode_set": "Mod '{mode}' olarak ayarlandı. Yeniden başlatılıyor...",
+        "mux_backend_label": "MUX Aracı (Backend)", "mux_auto": "Otomatik Algıla",
         # Settings page
         "appearance": "GÖRÜNÜM", "theme": "Tema", "lang_label": "Dil / Language",
         "dark": "Koyu", "light": "Açık", "system": "Sistem Uyarlanır",
@@ -150,6 +151,7 @@ TRANSLATIONS = {
         "restart": "Restart",
         "restart_confirm": "System will restart to change GPU mode to '{mode}'. Continue?",
         "mode_set": "Mode set to '{mode}'. Restarting...",
+        "mux_backend_label": "MUX Backend Tool", "mux_auto": "Auto Detect",
         # Settings page
         "appearance": "APPEARANCE", "theme": "Theme", "lang_label": "Language",
         "dark": "Dark", "light": "Light", "system": "System Default",

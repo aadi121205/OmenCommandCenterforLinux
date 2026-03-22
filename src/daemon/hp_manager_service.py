@@ -410,16 +410,49 @@ class MUXController:
         self._detect_backend()
 
     def _detect_backend(self):
-        if os.path.exists(_BIOS_MUX_PATH):
+        # If a backend is forced in state, use it if available
+        with lock:
+            forced = state.get("mux_backend")
+        
+        available = self.get_available_backends()
+        
+        if forced in available:
+            self.backend = forced
+            logger.info(f"MUX backend: {self.backend} (forced by user)")
+            return
+
+        if "bios" in available:
             self.backend = "bios"
-        elif self.envycontrol:
+        elif "envycontrol" in available:
             self.backend = "envycontrol"
-        elif self.supergfxctl:
+        elif "supergfxctl" in available:
             self.backend = "supergfxctl"
-        elif self.prime_select:
+        elif "prime-select" in available:
             self.backend = "prime-select"
 
-        logger.info(f"MUX backend: {self.backend or 'none'}")
+        logger.info(f"MUX backend: {self.backend or 'none'} (detected)")
+
+    def get_available_backends(self):
+        backends = []
+        if os.path.exists(_BIOS_MUX_PATH):
+            backends.append("bios")
+        if self.envycontrol:
+            backends.append("envycontrol")
+        if self.supergfxctl:
+            backends.append("supergfxctl")
+        if self.prime_select:
+            backends.append("prime-select")
+        return backends
+
+    def set_backend(self, backend):
+        available = self.get_available_backends()
+        if backend in available:
+            self.backend = backend
+            self._cached_mode = "unknown"
+            self._last_check = 0.0
+            logger.info(f"MUX backend switched to: {backend}")
+            return True
+        return False
 
     def is_available(self):
         return self.backend is not None
@@ -640,6 +673,7 @@ state: typing.Dict[str, typing.Any] = {
     "win_lock":      False,
     "prtsc_fix":     False,
     "f1_fix":        False,
+    "mux_backend":   "auto",
 }
 
 fan_ctrl   = FanController()
@@ -722,6 +756,10 @@ def load_state():
                 state["f1_fix"] = loaded["f1_fix"]
             if isinstance(loaded.get("win_lock"), bool):
                 state["win_lock"] = loaded["win_lock"]
+            
+            mb = loaded.get("mux_backend")
+            if isinstance(mb, str):
+                state["mux_backend"] = mb
 
         except Exception as e:
             logger.error(f"State load error: {e}")
@@ -749,6 +787,7 @@ class HPManagerService(object):
         <method name="CleanMemory"><arg type="s" name="result" direction="out"/></method>
         <method name="SetWinLock"><arg type="b" name="locked" direction="in"/><arg type="s" name="result" direction="out"/></method>
         <method name="SetKeyboardFixes"><arg type="b" name="prtsc" direction="in"/><arg type="b" name="f1" direction="in"/><arg type="s" name="result" direction="out"/></method>
+        <method name="SetMuxBackend"><arg type="s" name="backend" direction="in"/><arg type="s" name="result" direction="out"/></method>
       </interface>
     </node>
     """
@@ -820,6 +859,7 @@ class HPManagerService(object):
                 gpu_snapshot = {
                     "available": mux_ctrl.is_available(),
                     "backend":   mux_ctrl.get_backend(),
+                    "available_backends": mux_ctrl.get_available_backends(),
                     "mode":      mux_ctrl.get_mode(),
                 }
                 _mux_last_poll = now
@@ -961,7 +1001,10 @@ class HPManagerService(object):
 
     def GetGpuInfo(self):
         with _cache_lock:
-            return json.dumps(self._gpu_cache)
+            data = dict(self._gpu_cache)
+        with lock:
+            data["forced_backend"] = state.get("mux_backend", "auto")
+        return json.dumps(data)
 
     def GetSystemInfo(self):
         with _cache_lock:
@@ -1080,6 +1123,23 @@ class HPManagerService(object):
             threading.Thread(target=_apply, daemon=True).start()
         except Exception as e:
             logger.error(f"Failed to write hwdb rules: {e}")
+        return "OK"
+
+    def SetMuxBackend(self, backend):
+        logger.info(f"SetMuxBackend: {backend}")
+        if backend == "auto":
+            with lock:
+                state["mux_backend"] = "auto"
+            mux_ctrl._detect_backend() # re-detect
+            save_state()
+            return "OK"
+        
+        if mux_ctrl.set_backend(backend):
+            with lock:
+                state["mux_backend"] = backend
+            save_state()
+            return "OK"
+        return "FAIL"
 
 
 # ============================================================
