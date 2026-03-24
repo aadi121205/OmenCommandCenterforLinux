@@ -15,7 +15,6 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 logger = logging.getLogger("hp-manager")
 
 lock = threading.RLock()
-# FIX: separate lock for cache dicts to avoid blocking D-Bus calls while monitor writes
 _cache_lock = threading.Lock()
 state_changed = threading.Event()
 HEX_COLOR_RE = re.compile(r"^[0-9A-F]{6}$")
@@ -225,7 +224,7 @@ class RGBController:
             return
 
         try:
-            time.sleep(0.001)  # Mitigate AE_AML_BUFFER_LIMIT in ACPI (1ms is sufficient)
+            time.sleep(0.001)
             fd = self._fds.get(target_zone)
             if fd:
                 fd.seek(0)
@@ -410,17 +409,21 @@ class MUXController:
         self._detect_backend()
 
     def _detect_backend(self):
-        # If a backend is forced in state, use it if available
-        with lock:
-            forced = state.get("mux_backend")
-        
+        # FIX: read forced backend from state safely (state may not exist yet at init)
+        try:
+            with lock:
+                forced = state.get("mux_backend", "auto")
+        except Exception:
+            forced = "auto"
+
         available = self.get_available_backends()
-        
-        if forced in available:
+
+        if forced != "auto" and forced in available:
             self.backend = forced
             logger.info(f"MUX backend: {self.backend} (forced by user)")
             return
 
+        # Auto-detect priority: bios > envycontrol > supergfxctl > prime-select
         if "bios" in available:
             self.backend = "bios"
         elif "envycontrol" in available:
@@ -429,8 +432,10 @@ class MUXController:
             self.backend = "supergfxctl"
         elif "prime-select" in available:
             self.backend = "prime-select"
+        else:
+            self.backend = None
 
-        logger.info(f"MUX backend: {self.backend or 'none'} (detected)")
+        logger.info(f"MUX backend: {self.backend or 'none'} (auto-detected)")
 
     def get_available_backends(self):
         backends = []
@@ -448,10 +453,12 @@ class MUXController:
         available = self.get_available_backends()
         if backend in available:
             self.backend = backend
+            # FIX: reset cache so next get_mode() reads fresh from new backend
             self._cached_mode = "unknown"
             self._last_check = 0.0
             logger.info(f"MUX backend switched to: {backend}")
             return True
+        logger.warning(f"MUX backend '{backend}' not available (available: {available})")
         return False
 
     def is_available(self):
@@ -472,16 +479,19 @@ class MUXController:
                     val = int(f.read().strip())
                 mode = _BIOS_MUX_READ.get(val, "unknown")
             elif self.backend == "envycontrol" and self.envycontrol:
-                mode = subprocess.check_output([self.envycontrol, "--query"],
-                                               stderr=subprocess.STDOUT, timeout=5).decode().strip().lower()
+                mode = subprocess.check_output(
+                    [self.envycontrol, "--query"],
+                    stderr=subprocess.STDOUT, timeout=5).decode().strip().lower()
             elif self.backend == "supergfxctl" and self.supergfxctl:
-                mode = subprocess.check_output([self.supergfxctl, "-g"],
-                                               stderr=subprocess.STDOUT, timeout=5).decode().strip().lower()
+                mode = subprocess.check_output(
+                    [self.supergfxctl, "-g"],
+                    stderr=subprocess.STDOUT, timeout=5).decode().strip().lower()
             elif self.backend == "prime-select" and self.prime_select:
-                mode = subprocess.check_output([self.prime_select, "query"],
-                                               stderr=subprocess.STDOUT, timeout=5).decode().strip().lower()
-        except Exception:
-            pass
+                mode = subprocess.check_output(
+                    [self.prime_select, "query"],
+                    stderr=subprocess.STDOUT, timeout=5).decode().strip().lower()
+        except Exception as e:
+            logger.debug(f"MUX get_mode error: {e}")
 
         self._cached_mode = mode
         self._last_check = now
@@ -516,17 +526,26 @@ class MUXController:
 
             elif self.backend == "envycontrol" and self.envycontrol:
                 subprocess.run([self.envycontrol, "-s", mode], check=True, timeout=10)
+                self._cached_mode = mode
+                self._last_check  = time.time()
                 return "OK"
+
             elif self.backend == "supergfxctl" and self.supergfxctl:
                 m = {"hybrid": "Hybrid", "discrete": "Dedicated",
                      "integrated": "Integrated"}.get(mode, mode)
                 subprocess.run([self.supergfxctl, "-m", m], check=True, timeout=10)
+                self._cached_mode = mode
+                self._last_check  = time.time()
                 return "OK"
+
             elif self.backend == "prime-select" and self.prime_select:
                 m = {"hybrid": "on-demand", "discrete": "nvidia",
                      "integrated": "intel"}.get(mode, mode)
                 subprocess.run([self.prime_select, m], check=True, timeout=10)
+                self._cached_mode = mode
+                self._last_check  = time.time()
                 return "OK"
+
         except Exception as e:
             return f"Error: {e}"
         return "No backend"
@@ -536,23 +555,17 @@ class MUXController:
 # ANIMATION ENGINE
 # ============================================================
 class AnimationEngine(threading.Thread):
-    # FIX: Separate frame times per mode.
-    # static/wave keep 10 FPS; breathing/cycle drop to 5 FPS — imperceptible to human eye.
-    FRAME_TIME          = 0.1    # 10 FPS  — wave, fallback
-    FRAME_TIME_SLOW     = 0.5    # 2 FPS   — breathing, cycle (imperceptible to human eye)
-    # FIX: Skip ACPI write when uniform color changed less than this threshold (0-255).
-    # Avoids redundant sysfs calls when phase delta is tiny.
-    _COLOR_THRESHOLD    = 5
+    FRAME_TIME       = 0.1
+    FRAME_TIME_SLOW  = 0.5
+    _COLOR_THRESHOLD = 5
 
     def __init__(self, rgb_ctrl):
         super().__init__(daemon=True)
         self.rgb = rgb_ctrl
         self.running = True
-        # FIX: Track last written uniform color to skip redundant writes in breathing/cycle.
         self._last_uniform: tuple = (-1, -1, -1)
 
     def _uniform_changed(self, new: tuple) -> bool:
-        """Returns True only when the new color differs enough to be worth writing."""
         return any(abs(n - o) > self._COLOR_THRESHOLD
                    for n, o in zip(new, self._last_uniform))
 
@@ -568,7 +581,6 @@ class AnimationEngine(threading.Thread):
                 cols = [str(c) for c in state.get("colors", ["FF0000"] * 8)]
                 d    = str(state.get("direction", "ltr"))
 
-            # ── Power off ────────────────────────────────────────────────────
             if not pwr:
                 self.rgb.write_brightness(False)
                 self.rgb.write_all(["000000"] * 8)
@@ -580,7 +592,6 @@ class AnimationEngine(threading.Thread):
             self.rgb.write_brightness(True)
             t = time.time()
 
-            # ── Static ───────────────────────────────────────────────────────
             if mode == "static":
                 targets = [self._hex_to_rgb(c) for c in cols]
                 self.rgb.write_all([
@@ -592,7 +603,6 @@ class AnimationEngine(threading.Thread):
                 state_changed.wait()
                 continue
 
-            # ── Breathing ────────────────────────────────────────────────────
             elif mode == "breathing":
                 period = 8.0 - (spd * 0.06)
                 phase  = 0.1 + 0.9 * ((math.sin(2 * math.pi * t / period) + 1) / 2)
@@ -602,34 +612,28 @@ class AnimationEngine(threading.Thread):
                     int(base[1] * phase * bri),
                     int(base[2] * phase * bri),
                 )
-                # FIX: Only write when color changed enough to be perceptible.
                 if self._uniform_changed(new_color):
                     self._last_uniform = new_color
                     hx = f"{new_color[0]:02X}{new_color[1]:02X}{new_color[2]:02X}"
                     self.rgb.write_all([hx] * 8)
-
                 sleep_time = max(self.FRAME_TIME_SLOW - (time.time() - loop_start), 0.001)
                 if state_changed.wait(timeout=sleep_time):
                     state_changed.clear()
                 continue
 
-            # ── Cycle ────────────────────────────────────────────────────────
             elif mode == "cycle":
                 hue = (t * (spd * 0.003)) % 1.0
                 r, g, b = colorsys.hsv_to_rgb(hue, 1.0, bri)
                 new_color = (int(r * 255), int(g * 255), int(b * 255))
-                # FIX: Only write when color changed enough to be perceptible.
                 if self._uniform_changed(new_color):
                     self._last_uniform = new_color
                     hx = f"{new_color[0]:02X}{new_color[1]:02X}{new_color[2]:02X}"
                     self.rgb.write_all([hx] * 8)
-
                 sleep_time = max(self.FRAME_TIME_SLOW - (time.time() - loop_start), 0.001)
                 if state_changed.wait(timeout=sleep_time):
                     state_changed.clear()
                 continue
 
-            # ── Wave ─────────────────────────────────────────────────────────
             elif mode == "wave":
                 targets = []
                 for i in range(8):
@@ -756,7 +760,7 @@ def load_state():
                 state["f1_fix"] = loaded["f1_fix"]
             if isinstance(loaded.get("win_lock"), bool):
                 state["win_lock"] = loaded["win_lock"]
-            
+
             mb = loaded.get("mux_backend")
             if isinstance(mb, str):
                 state["mux_backend"] = mb
@@ -822,9 +826,10 @@ class HPManagerService(object):
         self._info_cache: typing.Dict[str, typing.Any] = {}
         self._fan_cache:  typing.Dict[str, typing.Any] = {}
         self._gpu_cache: typing.Dict[str, typing.Any] = {
-            "available": mux_ctrl.is_available(),
-            "backend":   mux_ctrl.get_backend(),
-            "mode":      "unknown",
+            "available":          mux_ctrl.is_available(),
+            "backend":            mux_ctrl.get_backend(),
+            "available_backends": mux_ctrl.get_available_backends(),
+            "mode":               "unknown",
         }
 
         threading.Thread(target=self._monitor_loop, daemon=True).start()
@@ -856,16 +861,23 @@ class HPManagerService(object):
 
             now = time.time()
             if now - _mux_last_poll >= _MUX_POLL_INTERVAL:
+                with lock:
+                    forced_backend = state.get("mux_backend", "auto")
                 gpu_snapshot = {
-                    "available": mux_ctrl.is_available(),
-                    "backend":   mux_ctrl.get_backend(),
+                    "available":          mux_ctrl.is_available(),
+                    "backend":            mux_ctrl.get_backend(),
                     "available_backends": mux_ctrl.get_available_backends(),
-                    "mode":      mux_ctrl.get_mode(),
+                    # FIX: include forced_backend in cache so GetGpuInfo is always consistent
+                    "forced_backend":     forced_backend,
+                    "mode":               mux_ctrl.get_mode(),
                 }
                 _mux_last_poll = now
             else:
                 with _cache_lock:
                     gpu_snapshot = dict(self._gpu_cache)
+                # FIX: always refresh forced_backend from live state (it can change via SetMuxBackend)
+                with lock:
+                    gpu_snapshot["forced_backend"] = state.get("mux_backend", "auto")
 
             with _cache_lock:
                 self._info_cache = info
@@ -997,11 +1009,17 @@ class HPManagerService(object):
     def SetGpuMode(self, mode):
         if mode not in VALID_GPU_MODES:
             return "FAIL"
-        return mux_ctrl.set_mode(mode)
+        result = mux_ctrl.set_mode(mode)
+        # FIX: update cache immediately so next GetGpuInfo reflects new mode
+        if result in ("OK", "OK_REBOOT_REQUIRED"):
+            with _cache_lock:
+                self._gpu_cache["mode"] = mode
+        return result
 
     def GetGpuInfo(self):
         with _cache_lock:
             data = dict(self._gpu_cache)
+        # Always read forced_backend live from state (already in cache but keep fresh)
         with lock:
             data["forced_backend"] = state.get("mux_backend", "auto")
         return json.dumps(data)
@@ -1029,10 +1047,8 @@ class HPManagerService(object):
 
         if self._has_nvidia_smi:
             now = time.time()
-
             if now < self._nv_fail_cooldown:
                 return self._nv_temp_cache
-
             if now - self._last_nv_time > 5.0:
                 self._last_nv_time = now
                 try:
@@ -1044,7 +1060,6 @@ class HPManagerService(object):
                     self._nv_temp_cache = float(out)
                 except Exception:
                     self._nv_fail_cooldown = now + 15.0
-
             return self._nv_temp_cache
 
         return 0.0
@@ -1127,18 +1142,30 @@ class HPManagerService(object):
 
     def SetMuxBackend(self, backend):
         logger.info(f"SetMuxBackend: {backend}")
+
         if backend == "auto":
             with lock:
                 state["mux_backend"] = "auto"
-            mux_ctrl._detect_backend() # re-detect
             save_state()
+            # Re-detect best backend after clearing forced selection
+            mux_ctrl._detect_backend()
+            # FIX: update cache immediately
+            with _cache_lock:
+                self._gpu_cache["backend"]        = mux_ctrl.get_backend()
+                self._gpu_cache["forced_backend"] = "auto"
             return "OK"
-        
+
         if mux_ctrl.set_backend(backend):
             with lock:
                 state["mux_backend"] = backend
             save_state()
+            # FIX: update cache immediately so UI reflects change without waiting 30s
+            with _cache_lock:
+                self._gpu_cache["backend"]        = backend
+                self._gpu_cache["forced_backend"] = backend
+                self._gpu_cache["mode"]           = "unknown"  # will refresh on next poll
             return "OK"
+
         return "FAIL"
 
 
@@ -1151,6 +1178,9 @@ def main():
         sys.exit(1)
 
     load_state()
+
+    # Re-detect MUX backend now that state is loaded (forced_backend may be set)
+    mux_ctrl._detect_backend()
 
     if fan_ctrl.is_available():
         saved_fan = state.get("fan_mode", "auto")
