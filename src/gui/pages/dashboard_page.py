@@ -67,7 +67,7 @@ class ResourceBox(Gtk.Box):
 # ═════════════════════════════════════════════════════════════════════════════
 #  DASHBOARD PAGE
 # ═════════════════════════════════════════════════════════════════════════════
-_REFRESH_MS = 5000          # background fetch period
+_REFRESH_MS = 7000          # background fetch period
 _NVIDIA_SMI = None          # cached shutil.which result
 
 class DashboardPage(Gtk.Box):

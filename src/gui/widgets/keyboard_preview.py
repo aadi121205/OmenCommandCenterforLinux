@@ -61,10 +61,11 @@ class KeyboardPreview(Gtk.DrawingArea):
             GLib.source_remove(self._anim_timer)
             self._anim_timer = None
 
-    def set_zone_color(self, zone, r, g, b):
+    def set_zone_color(self, zone, r, g, b, redraw=True):
         if 0 <= zone < 8:
             self.zone_colors[zone] = (r, g, b)
-        self.queue_draw()
+        if redraw:
+            self.queue_draw()
 
     def set_all_zones(self, r, g, b):
         self.zone_colors = [(r, g, b)] * 8

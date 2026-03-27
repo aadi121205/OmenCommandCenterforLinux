@@ -224,16 +224,6 @@ class MUXPage(Gtk.Box):
         self.backend_label.set_opacity(0.8)
         card.append(self.backend_label)
 
-        # Backend Selection row
-        self.backend_box = Gtk.Box(spacing=15, halign=Gtk.Align.CENTER)
-        self.backend_box.set_margin_top(5)
-        self.backend_box.append(Gtk.Label(label=T("mux_backend_label"), 
-                                         css_classes=["stat-lbl"]))
-        self.backend_dd = Gtk.DropDown()
-        self.backend_dd.connect("notify::selected", self._on_backend_change)
-        self.backend_box.append(self.backend_dd)
-        card.append(self.backend_box)
-
         scroll_content.append(card)
 
         # Reboot warning (shown only when reboot is actually required)
@@ -394,26 +384,12 @@ class MUXPage(Gtk.Box):
             self.backend      = info.get("backend", "none")
             self.current_mode = info.get("mode",    "unknown")
             available         = info.get("available", False)
-            available_backends = info.get("available_backends", [])
 
             if available:
                 self.not_available.set_visible(False)
                 self.mux_box.set_visible(True)
                 self.backend_label.set_label(
                     f"{T('mode')}: {self.current_mode}")
-
-                # Update backends dropdown if needed
-                if not hasattr(self, "_last_backends") or self._last_backends != available_backends:
-                    self._last_backends = available_backends[:]
-                    opts = [T("mux_auto")] + [_BACKEND_LABELS.get(b, b) for b in available_backends]
-                    self.backend_dd.set_model(Gtk.StringList.new(opts))
-                    
-                    # Select current backend
-                    forced = info.get("forced_backend", "auto")
-                    if forced == "auto":
-                        self.backend_dd.set_selected(0)
-                    elif forced in available_backends:
-                        self.backend_dd.set_selected(available_backends.index(forced) + 1)
 
                 mode_map = {
                     "hybrid":     "hybrid",    "on-demand":  "hybrid",
@@ -435,20 +411,3 @@ class MUXPage(Gtk.Box):
                 self.status_label.set_label(T("mux_not_found"))
         except Exception:
             pass
-
-    def _on_backend_change(self, dd, _):
-        if not self.service or not hasattr(self, "_last_backends"):
-            return
-        idx = dd.get_selected()
-        if idx == 0:
-            target = "auto"
-        else:
-            target = self._last_backends[idx - 1]
-            
-        try:
-            res = self.service.SetMuxBackend(target)
-            if res == "OK":
-                # Wait a bit then refresh
-                GLib.timeout_add(500, self._refresh)
-        except Exception as e:
-            print(f"Failed to set Mux backend: {e}")

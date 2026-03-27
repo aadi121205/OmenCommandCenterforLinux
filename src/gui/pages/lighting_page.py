@@ -115,7 +115,7 @@ class LightingPage(Gtk.Box):
                 c = Gdk.RGBA()
                 c.parse(f"#{colors[i]}")
                 self.zone_rgba[i] = c
-                self.kb_preview.set_zone_color(i, c.red, c.green, c.blue)
+                self.kb_preview.set_zone_color(i, c.red, c.green, c.blue, redraw=False)
 
             self.kb_preview.power = self.power
             self.kb_preview.mode = self.mode
@@ -285,7 +285,7 @@ class LightingPage(Gtk.Box):
             for i in range(8):
                 self.zone_rgba[i] = c
                 if i < 4:
-                    self.kb_preview.set_zone_color(i, c.red, c.green, c.blue)
+                    self.kb_preview.set_zone_color(i, c.red, c.green, c.blue, redraw=False)
             if self.service:
                 try:
                     self.service.SetColor(8, hex_color)

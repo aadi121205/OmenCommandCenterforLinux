@@ -564,9 +564,10 @@ class MUXController:
 # ANIMATION ENGINE
 # ============================================================
 class AnimationEngine(threading.Thread):
-    FRAME_TIME       = 0.1
-    FRAME_TIME_SLOW  = 0.5
-    _COLOR_THRESHOLD = 5
+    FRAME_TIME       = 0.12
+    # Breathing/cycle were too jumpy at 0.5s; 0.12s stays smooth without heavy CPU use.
+    FRAME_TIME_SLOW  = 0.12
+    _COLOR_THRESHOLD = 3
 
     def __init__(self, rgb_ctrl):
         super().__init__(daemon=True)
@@ -893,7 +894,7 @@ class HPManagerService(object):
                 self._fan_cache  = fan_snapshot
                 self._gpu_cache  = gpu_snapshot
 
-            time.sleep(1.5)
+            time.sleep(2.0)
 
     def _find_temp_paths(self):
         best_score = -1000

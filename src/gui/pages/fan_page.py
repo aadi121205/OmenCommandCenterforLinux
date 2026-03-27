@@ -240,6 +240,12 @@ class SystemMonitor(threading.Thread):
         }
         self._conflict_cache = None
         self._conflict_counter = 0
+        self._collect_sensors = False
+        self._sensor_refresh_every = 3
+        self._sensor_cycle = 0
+
+    def set_collect_sensors(self, enabled):
+        self._collect_sensors = bool(enabled)
 
     def run(self):
         while self.running:
@@ -260,7 +266,13 @@ class SystemMonitor(threading.Thread):
                 try: pp = json.loads(service.GetPowerProfile())
                 except Exception: pass
 
-            sensors = self._get_all_sensors()
+            sensors = []
+            if self._collect_sensors:
+                self._sensor_cycle += 1
+                # Full hwmon scan is relatively expensive; refresh less often while expanded.
+                if self._sensor_cycle >= self._sensor_refresh_every:
+                    self._sensor_cycle = 0
+                    sensors = self._get_all_sensors()
 
             # Check for TLP / auto-cpufreq conflict (cached, every 10 cycles ~25s)
             self._conflict_counter += 1
@@ -362,6 +374,8 @@ class FanPage(Gtk.Box):
         self._sensor_widgets = {} # Storage for efficient sensor updates
 
     def _anim_tick(self):
+        if not self.get_mapped():
+            return True
         self.fan1_gauge.tick_rotation()
         self.fan2_gauge.tick_rotation()
         return True
@@ -674,6 +688,7 @@ class FanPage(Gtk.Box):
 
     def _toggle_sensors(self, btn):
         self._sensors_expanded = not self._sensors_expanded
+        self.monitor.set_collect_sensors(self._sensors_expanded)
         self.sensor_box.set_visible(self._sensors_expanded)
         self._expander_arrow.set_from_icon_name(
             "pan-up-symbolic" if self._sensors_expanded else "pan-down-symbolic")
