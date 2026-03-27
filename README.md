@@ -26,6 +26,7 @@
 - 🎮 **MUX Backend Stability**: Backend selection is now configurable from Settings, with auto-priority favoring external tools (`envycontrol`, `supergfxctl`, `prime-select`) before HP WMI direct mode.
 - 🔐 **Privileged MUX Commands**: MUX apply actions use interactive authentication prompts for privileged backend commands.
 - 🧪 **Errno 22 Mitigation**: HP WMI `graphics_mode` writes now try multiple payload formats to reduce model-specific `Invalid Argument (22)` failures.
+- 🌈 **Wave Effect Optimization**: Wave now shifts smoothly across your selected keyboard colors (instead of HSV rainbow), and applies thresholded zone writes for significantly lower CPU usage under animation load.
 
 
 ## ✨ Features
@@ -34,6 +35,7 @@
 - **4-Zone Control**: Customize colors for different keyboard zones.
 - **Effects**: Static, Breathing, Wave, Cycle.
 - **Brightness & Speed**: Adjustable parameters for dynamic effects.
+- **Low-CPU Wave Engine**: On tested systems, wave mode CPU usage dropped from ~22-28% average to ~2% average in stress conditions.
 
 ### 📊 System Dashboard
 - **Real-time Monitoring**: CPU/GPU temperatures and Fan speeds.

@@ -565,6 +565,7 @@ class MUXController:
 # ============================================================
 class AnimationEngine(threading.Thread):
     FRAME_TIME       = 0.12
+    FRAME_TIME_WAVE  = 0.15
     # Breathing/cycle were too jumpy at 0.5s; 0.12s stays smooth without heavy CPU use.
     FRAME_TIME_SLOW  = 0.12
     _COLOR_THRESHOLD = 3
@@ -574,10 +575,15 @@ class AnimationEngine(threading.Thread):
         self.rgb = rgb_ctrl
         self.running = True
         self._last_uniform: tuple = (-1, -1, -1)
+        self._last_wave: typing.List[typing.Tuple[int, int, int]] = [(-1, -1, -1)] * 8
 
     def _uniform_changed(self, new: tuple) -> bool:
         return any(abs(n - o) > self._COLOR_THRESHOLD
                    for n, o in zip(new, self._last_uniform))
+
+    def _zone_changed(self, new: tuple, old: tuple) -> bool:
+        return any(abs(n - o) > self._COLOR_THRESHOLD
+                   for n, o in zip(new, old))
 
     def run(self):
         logger.info("Animation engine started")
@@ -595,6 +601,7 @@ class AnimationEngine(threading.Thread):
                 self.rgb.write_brightness(False)
                 self.rgb.write_all(["000000"] * 8)
                 self._last_uniform = (-1, -1, -1)
+                self._last_wave = [(-1, -1, -1)] * 8
                 state_changed.clear()
                 state_changed.wait()
                 continue
@@ -609,6 +616,7 @@ class AnimationEngine(threading.Thread):
                     for r, g, b in targets
                 ])
                 self._last_uniform = (-1, -1, -1)
+                self._last_wave = [(-1, -1, -1)] * 8
                 state_changed.clear()
                 state_changed.wait()
                 continue
@@ -626,6 +634,7 @@ class AnimationEngine(threading.Thread):
                     self._last_uniform = new_color
                     hx = f"{new_color[0]:02X}{new_color[1]:02X}{new_color[2]:02X}"
                     self.rgb.write_all([hx] * 8)
+                self._last_wave = [(-1, -1, -1)] * 8
                 sleep_time = max(self.FRAME_TIME_SLOW - (time.time() - loop_start), 0.001)
                 if state_changed.wait(timeout=sleep_time):
                     state_changed.clear()
@@ -639,22 +648,47 @@ class AnimationEngine(threading.Thread):
                     self._last_uniform = new_color
                     hx = f"{new_color[0]:02X}{new_color[1]:02X}{new_color[2]:02X}"
                     self.rgb.write_all([hx] * 8)
+                self._last_wave = [(-1, -1, -1)] * 8
                 sleep_time = max(self.FRAME_TIME_SLOW - (time.time() - loop_start), 0.001)
                 if state_changed.wait(timeout=sleep_time):
                     state_changed.clear()
                 continue
 
             elif mode == "wave":
-                targets = []
+                # Shift between user-selected base colors instead of HSV rainbow.
+                base_cols = [self._hex_to_rgb(c) for c in cols[:4]]
+                if not base_cols:
+                    base_cols = [(255, 0, 0)]
+                while len(base_cols) < 4:
+                    base_cols.append(base_cols[-1])
+
+                # Higher speed -> faster horizontal color shift.
+                step_period = max(0.06, 0.42 - (spd * 0.0036))
+                shift_pos = t / step_period
+                shift_int = int(shift_pos)
+                shift_frac = shift_pos - shift_int
+
                 for i in range(8):
-                    offset = (i * 0.15) if d == "ltr" else ((7 - i) * 0.15)
-                    r, g, b = colorsys.hsv_to_rgb((t * spd * 0.007 + offset) % 1.0, 1.0, bri)
-                    targets.append((int(r * 255), int(g * 255), int(b * 255)))
-                self.rgb.write_all([
-                    f"{r:02X}{g:02X}{b:02X}"
-                    for r, g, b in targets
-                ])
+                    zone = i if d == "ltr" else (7 - i)
+                    idx = (zone + shift_int) % 4
+                    nxt = (idx + 1) % 4
+
+                    c0 = base_cols[idx]
+                    c1 = base_cols[nxt]
+
+                    r = int((c0[0] + (c1[0] - c0[0]) * shift_frac) * bri)
+                    g = int((c0[1] + (c1[1] - c0[1]) * shift_frac) * bri)
+                    b = int((c0[2] + (c1[2] - c0[2]) * shift_frac) * bri)
+                    new_color = (r, g, b)
+
+                    if self._zone_changed(new_color, self._last_wave[i]):
+                        self._last_wave[i] = new_color
+                        self.rgb.write_zone(i, f"{new_color[0]:02X}{new_color[1]:02X}{new_color[2]:02X}")
                 self._last_uniform = (-1, -1, -1)
+                sleep_time = max(self.FRAME_TIME_WAVE - (time.time() - loop_start), 0.001)
+                if state_changed.wait(timeout=sleep_time):
+                    state_changed.clear()
+                continue
 
             sleep_time = max(self.FRAME_TIME - (time.time() - loop_start), 0.001)
             if state_changed.wait(timeout=sleep_time):
