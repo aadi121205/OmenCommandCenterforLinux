@@ -47,7 +47,7 @@ from pages.settings_page import SettingsPage
 from pages.dashboard_page import DashboardPage
 from pages.keyboard_page import KeyboardPage
 
-APP_VERSION = "1.2.2"
+APP_VERSION = "1.2.3"
 CONFIG_FILE      = os.path.expanduser("~/.config/hp-manager.toml")
 CONFIG_FILE_JSON = os.path.expanduser("~/.config/hp-manager.json")
 
@@ -868,6 +868,7 @@ class HPManagerWindow(Gtk.ApplicationWindow):
             on_theme_change=self._on_theme_change,
             on_lang_change=self._on_lang_change,
             on_temp_unit_change=self._on_temp_unit_change,
+            service=self.service,
         )
 
         self.stack.add_named(self.dashboard_page, "dashboard")
@@ -946,6 +947,7 @@ class HPManagerWindow(Gtk.ApplicationWindow):
             if hasattr(self, 'keyboard_page'):
                 self.keyboard_page.service = self.service
             self.mux_page.set_service(self.service)
+            self.settings_page.set_service(self.service)
             print("Daemon connected")
         except Exception as e:
             print(f"⚠ Daemon connection failed: {e}")
@@ -1018,6 +1020,7 @@ class HPManagerWindow(Gtk.ApplicationWindow):
                 on_theme_change=self._on_theme_change,
                 on_lang_change=self._on_lang_change,
                 on_temp_unit_change=self._on_temp_unit_change,
+                service=self.service,
             )
 
             self.stack.add_named(self.dashboard_page, "dashboard")

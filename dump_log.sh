@@ -1,2 +1,4 @@
-#!/bin/bash
-git log -n 10 > /tmp/git_log.txt
+#!/usr/bin/env bash
+set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec "$SCRIPT_DIR/scripts/diagnostics/dump_log.sh" "$@"

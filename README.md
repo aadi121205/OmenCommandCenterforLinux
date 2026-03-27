@@ -1,5 +1,5 @@
 
- # OMEN Command Center for Linux v1.2.2 #
+ # OMEN Command Center for Linux v1.2.3 #
 <p align="center">
   <img src="images/omenapplogo.png" alt="Logo" width="250">
 
@@ -18,11 +18,14 @@
 
 **OMEN Command Center for Linux** is a native Linux application designed to unlock the full potential of HP Omen and Victus series laptops. It serves as an open-source alternative to the official OMEN Gaming Hub, providing essential controls in a modern, user-friendly interface.
 
-**New in v1.2.2:**
+**New in v1.2.3:**
 
-- 🌪️ **Fan Control**: Fixed 0 RPM reporting issue on **8BA9** (OMEN 16-wd0xxx). The driver now correctly uses the newer Victus S-style fan speed queries for these models.
-- 🎮 **MUX Backend**: Added manual backend selection in MUX settings. Users can now explicitly choose between **HP WMI (direct)**, `envycontrol`, `supergfxctl`, or `prime-select` instead of relying on auto-detection.
-- 🛠 **Kernel Driver**: Fixed `-22` (EINVAL) probe crash on **8D41** (OMEN MAX 16-ah0xxx). Fixed MUX switch `Invalid Argument` on **8C77**.
+- 🌪️ **Fan/Platform Compatibility**: Improved board handling for OMEN MAX / 8D87-class devices by aligning Victus-S parameter paths with confirmed working behavior.
+- 🛠 **Installer Reliability**: DKMS install flow improved to reduce repeat-install conflicts and avoid early stock driver backup before successful build/install.
+- 🧰 **Recovery Improvements**: Restore tooling now checks both `/lib/modules` and `/usr/lib/modules`, improving Arch/CachyOS recovery paths.
+- 🎮 **MUX Backend Stability**: Backend selection is now configurable from Settings, with auto-priority favoring external tools (`envycontrol`, `supergfxctl`, `prime-select`) before HP WMI direct mode.
+- 🔐 **Privileged MUX Commands**: MUX apply actions use interactive authentication prompts for privileged backend commands.
+- 🧪 **Errno 22 Mitigation**: HP WMI `graphics_mode` writes now try multiple payload formats to reduce model-specific `Invalid Argument (22)` failures.
 
 
 ## ✨ Features
@@ -43,8 +46,9 @@
 
 ### 🎮 GPU MUX Switch (BETA)
 - Switch between **Hybrid**, **Discrete**, and **Integrated** modes.
-- ⚠️ **Warning**: MUX Switch functionality is currently in **Beta**. We are actively working to resolve remaining "Invalid Argument" (Errno 22) errors on some hardware versions.
-- **Recommendation**: For the most stable GPU switching experience, we currently recommend using dedicated tools like [`envycontrol`](https://github.com/bayasandaa/envycontrol) or `prime-select`.
+- Backend can be selected from **Settings → GPU / MUX**.
+- Auto mode now prefers `envycontrol` / `supergfxctl` / `prime-select` before HP WMI direct.
+- ⚠️ Some hardware/BIOS combinations may still require reboot or vendor-specific tooling behavior.
 
 ### ⌨️ Desktop Shortcuts (Recommended)
  To minimize background resource usage, we have removed the active OMEN Key listener daemon. We highly recommend creating a **Custom Shortcut** in your Desktop Environment settings (GNOME, KDE, etc.):
@@ -71,6 +75,16 @@ chmod +x setup.sh
 sudo ./setup.sh install
 ```
 Installation Warning⚠️: We recommend restart your computer after installation.
+
+### Script Layout
+
+Maintenance scripts are now organized under:
+
+- `scripts/fixes/`
+- `scripts/diagnostics/`
+- `scripts/tests/`
+
+Legacy entry points (`fix_hp_wmi.sh`, `fix_omen.sh`, `dump_log.sh`, `test_nvidia.py`) are kept at the repository root as compatibility wrappers.
 
 The installer will automatically:
 1. Detect your package manager and install dependencies.

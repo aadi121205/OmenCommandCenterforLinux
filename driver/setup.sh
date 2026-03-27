@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# install.sh — Multi-distro installer for hp-wmi-fan-and-backlight-control
+# setup.sh — Multi-distro installer for hp-wmi-fan-and-backlight-control
 # https://github.com/TUXOV/hp-wmi-fan-and-backlight-control
 #
 # Supports: Debian/Ubuntu, Fedora/RHEL, Arch, openSUSE, Void, Gentoo
-# Usage: sudo ./install.sh [install|uninstall]
+# Usage: sudo ./setup.sh [install|uninstall]
 
 set -euo pipefail
 
@@ -14,7 +14,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 MODNAME="hp-rgb-lighting"
-MODVER=$(grep -oP 'PACKAGE_VERSION="\K[^"]+' dkms.conf 2>/dev/null || echo "1.2.1")
+MODVER=$(grep -oP 'PACKAGE_VERSION="\K[^"]+' dkms.conf 2>/dev/null || echo "1.2.3")
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # MOK_DIR — initialised here so it is always defined (avoids unbound variable
@@ -173,6 +173,7 @@ find_module_paths() {
 
 do_install() {
     [[ $EUID -ne 0 ]] && error "This script must be run as root (use sudo)."
+    local ORIG_WMI=""
 
     detect_distro
     install_deps
@@ -218,22 +219,35 @@ DKMSRGB
     else
         info "Kernel $(uname -r) detected (< 7.0) — installing both hp-wmi and hp-rgb-lighting..."
 
-        info "Checking for stock hp-wmi driver to backup and disable..."
+        info "Checking for stock hp-wmi driver path..."
         # FIX: modinfo -n resolves symlinks and works on both /lib and /usr/lib
         ORIG_WMI=$(modinfo -n hp-wmi 2>/dev/null || true)
         if [[ -n "$ORIG_WMI" ]] && [[ -f "$ORIG_WMI" ]] && [[ ! "$ORIG_WMI" == *"updates"* ]] && [[ ! "$ORIG_WMI" == *"dkms"* ]]; then
-            info "Backing up stock driver: $ORIG_WMI"
-            mv "$ORIG_WMI" "${ORIG_WMI}.backup"
+            info "Stock driver detected at: $ORIG_WMI"
+        else
+            ORIG_WMI=""
         fi
     fi
 
     # Install via DKMS
     info "Installing via DKMS..."
-    if ! dkms status "$MODNAME/$MODVER" 2>/dev/null | grep -q "added"; then
+    if ! dkms status "$MODNAME/$MODVER" 2>/dev/null | grep -Eq "^${MODNAME}/${MODVER}([,:]|$)"; then
         dkms add -m "$MODNAME" -v "$MODVER" || true
+    else
+        info "DKMS source already present for $MODNAME/$MODVER, skipping dkms add."
     fi
     dkms build   -m "$MODNAME" -v "$MODVER"          || error "DKMS build failed. Check logs."
     dkms install -m "$MODNAME" -v "$MODVER" --force   || error "DKMS install failed."
+
+    # After DKMS install succeeds, archive stock hp-wmi so the DKMS module wins consistently.
+    if ! $STOCK_FAN_SUPPORT && [[ -n "$ORIG_WMI" ]] && [[ -f "$ORIG_WMI" ]]; then
+        if [[ ! -f "${ORIG_WMI}.backup" ]]; then
+            info "Backing up stock driver: $ORIG_WMI"
+            mv "$ORIG_WMI" "${ORIG_WMI}.backup"
+        else
+            info "Stock backup already exists: ${ORIG_WMI}.backup"
+        fi
+    fi
 
     # ── Secure Boot handling ─────────────────────────────────────────────────
     SECUREBOOT=false

@@ -140,12 +140,21 @@ class FanController:
         ok = self._sysfs_write("pwm1_enable", val)
 
         if not ok and mode == "max":
-            platform_path = "/sys/devices/platform/hp-wmi/thermal_profile"
-            if os.path.exists(platform_path):
+            # Fallback path for firmware where pwm1_enable alone does not
+            # apply max cooling.
+            for profile_path, profile_value in (
+                ("/sys/devices/platform/hp-wmi/thermal_profile", "1"),
+                ("/sys/devices/platform/hp-omen/thermal_profile", "1"),
+                ("/sys/firmware/acpi/platform_profile", "performance"),
+                ("/sys/devices/platform/hp-wmi/platform_profile", "performance"),
+            ):
+                if not os.path.exists(profile_path):
+                    continue
                 try:
-                    with open(platform_path, "w") as f:
-                        f.write("1")
+                    with open(profile_path, "w") as f:
+                        f.write(profile_value)
                     ok = True
+                    break
                 except Exception:
                     pass
 
@@ -423,15 +432,15 @@ class MUXController:
             logger.info(f"MUX backend: {self.backend} (forced by user)")
             return
 
-        # Auto-detect priority: bios > envycontrol > supergfxctl > prime-select
-        if "bios" in available:
-            self.backend = "bios"
-        elif "envycontrol" in available:
+        # Auto-detect priority: envycontrol > supergfxctl > prime-select > bios
+        if "envycontrol" in available:
             self.backend = "envycontrol"
         elif "supergfxctl" in available:
             self.backend = "supergfxctl"
         elif "prime-select" in available:
             self.backend = "prime-select"
+        elif "bios" in available:
+            self.backend = "bios"
         else:
             self.backend = None
 
@@ -439,14 +448,14 @@ class MUXController:
 
     def get_available_backends(self):
         backends = []
-        if os.path.exists(_BIOS_MUX_PATH):
-            backends.append("bios")
         if self.envycontrol:
             backends.append("envycontrol")
         if self.supergfxctl:
             backends.append("supergfxctl")
         if self.prime_select:
             backends.append("prime-select")
+        if os.path.exists(_BIOS_MUX_PATH):
+            backends.append("bios")
         return backends
 
     def set_backend(self, backend):

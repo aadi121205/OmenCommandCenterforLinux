@@ -291,6 +291,14 @@ class MUXPage(Gtk.Box):
         """Apply the mode; ask for reboot confirmation only if needed."""
         if not self.service:
             return
+
+        if self.backend in ("envycontrol", "supergfxctl", "prime-select"):
+            ok, err = self._run_backend_with_auth(mode)
+            if not ok:
+                self.status_label.set_label(f"{T('error')}: {err}")
+                self._restore_button()
+                return
+
         try:
             result = self.service.SetGpuMode(mode)
         except Exception as e:
@@ -348,6 +356,34 @@ class MUXPage(Gtk.Box):
                 self.status_label.set_label(
                     f"{T('mode_set').format(mode=self.current_mode)} "
                     f"({T('error')}: reboot: {e})")
+
+    def _run_backend_with_auth(self, mode):
+        """Run external MUX command through pkexec so the user gets an on-screen auth prompt."""
+        try:
+            if self.backend == "envycontrol":
+                # Keep -S first for compatibility with user reports, fallback to -s.
+                shell_cmd = f"envycontrol -S {mode} || envycontrol -s {mode}"
+                human_cmd = f"sudo envycontrol -S {mode}"
+            elif self.backend == "supergfxctl":
+                mapped = {"hybrid": "Hybrid", "discrete": "Dedicated", "integrated": "Integrated"}.get(mode, mode)
+                shell_cmd = f"supergfxctl -m {mapped}"
+                human_cmd = f"sudo supergfxctl -m {mapped}"
+            elif self.backend == "prime-select":
+                mapped = {"hybrid": "on-demand", "discrete": "nvidia", "integrated": "intel"}.get(mode, mode)
+                shell_cmd = f"prime-select {mapped}"
+                human_cmd = f"sudo prime-select {mapped}"
+            else:
+                return True, ""
+
+            subprocess.run(["pkexec", "/bin/sh", "-lc", shell_cmd], check=True, timeout=120)
+            self.status_label.set_label(f"{T('mode_set').format(mode=mode)} [{human_cmd}]")
+            return True, ""
+        except FileNotFoundError:
+            return False, "pkexec not found"
+        except subprocess.CalledProcessError as e:
+            return False, f"auth/backend command failed ({e})"
+        except Exception as e:
+            return False, str(e)
 
     # ── Data refresh ──────────────────────────────────────────────────────────
     def _refresh(self):

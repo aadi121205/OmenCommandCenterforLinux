@@ -1159,14 +1159,8 @@ static ssize_t graphics_mode_store(struct device *dev,
 				   struct device_attribute *attr,
 				   const char *buf, size_t count)
 {
-	/*
-	 * FIX: use a proper local buffer and pass its real size to
-	 * hp_wmi_perform_query for the WRITE direction.  Do NOT use
-	 * zero_if_sup() here — that macro is for READ insize only; passing
-	 * insize=0 on a WRITE causes firmware to return
-	 * HPWMI_RET_INVALID_PARAMETERS (0x05) → -EINVAL → errno 22.
-	 */
-	u8 mode_buf[128] = {0};
+	u8 mode_buf_small[1];
+	u8 mode_buf_padded[128] = {0};
 	u32 tmp;
 	int ret;
 
@@ -1178,10 +1172,20 @@ static ssize_t graphics_mode_store(struct device *dev,
 	if (tmp > 2)
 		return -EINVAL;
 
-	mode_buf[0] = (u8)tmp;
+	mode_buf_small[0] = (u8)tmp;
+	mode_buf_padded[0] = (u8)tmp;
 
+	/*
+	 * Firmware is inconsistent across models: some expect a compact payload
+	 * (1 byte), others require a padded buffer.  Try compact first, then
+	 * retry with padded data to avoid spurious errno 22 on supported boards.
+	 */
 	ret = hp_wmi_perform_query(HPWMI_SYSTEM_DEVICE_MODE, HPWMI_WRITE,
-				   mode_buf, sizeof(mode_buf), 0);
+				   mode_buf_small, sizeof(mode_buf_small), 0);
+	if (ret == HPWMI_RET_INVALID_PARAMETERS || ret == -EINVAL)
+		ret = hp_wmi_perform_query(HPWMI_SYSTEM_DEVICE_MODE, HPWMI_WRITE,
+					   mode_buf_padded, sizeof(mode_buf_padded), 0);
+
 	if (ret)
 		return ret < 0 ? ret : -EINVAL;
 
@@ -2470,8 +2474,12 @@ static int hp_wmi_apply_fan_settings(struct hp_wmi_hwmon_priv *priv)
 
 	switch (priv->mode) {
 	case PWM_MODE_MAX:
-		if (priv->fan_speed_available)
-			hp_wmi_get_fan_count_userdefine_trigger();
+		/*
+		 * Some firmware revisions require this trigger before max-fan mode
+		 * actually takes effect. It is harmless on boards that do not
+		 * implement the command, so treat it as best-effort.
+		 */
+		hp_wmi_get_fan_count_userdefine_trigger();
 		ret = hp_wmi_fan_speed_max_set(1);
 		if (ret < 0)
 			return ret;

@@ -19,18 +19,21 @@ def T(k):
     return _T(k)
 
 
-APP_VERSION = "1.2.2"
+APP_VERSION = "1.2.3"
 GITHUB_REPO = "yunusemreyl/OmenCommandCenterforLinux"
 GITHUB_API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 GITHUB_RELEASES_URL = f"https://github.com/{GITHUB_REPO}/releases/latest"
 
 
 class SettingsPage(Gtk.Box):
-    def __init__(self, on_theme_change=None, on_lang_change=None, on_temp_unit_change=None):
+    def __init__(self, on_theme_change=None, on_lang_change=None, on_temp_unit_change=None, service=None):
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=20)
         self.on_theme_change = on_theme_change
         self.on_lang_change = on_lang_change
         self.on_temp_unit_change = on_temp_unit_change
+        self.service = service
+        self._mux_backends = []
+        self._updating_mux_dd = False
         self.set_margin_top(30)
         self.set_margin_start(40)
         self.set_margin_end(40)
@@ -172,6 +175,22 @@ class SettingsPage(Gtk.Box):
             driver_card.append(row)
         content.append(driver_card)
 
+        # ── MUX Backend ──
+        mux_card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=15)
+        mux_card.add_css_class("card")
+        mux_card.append(Gtk.Label(label=T("gpu_mux_label"), xalign=0, css_classes=["section-title"]))
+
+        mux_row = Gtk.Box(spacing=20)
+        mux_row.append(Gtk.Label(label=T("mux_backend_label"), hexpand=True, xalign=0))
+        self.mux_dd = Gtk.DropDown(model=Gtk.StringList.new([T("mux_auto")]))
+        self.mux_dd.connect("notify::selected", self._on_mux_backend)
+        mux_row.append(self.mux_dd)
+        mux_card.append(mux_row)
+
+        self.mux_status = Gtk.Label(label="", xalign=0, css_classes=["stat-lbl"])
+        mux_card.append(self.mux_status)
+        content.append(mux_card)
+
         # ── About ──
         about_card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=15)
         about_card.add_css_class("card")
@@ -231,6 +250,53 @@ class SettingsPage(Gtk.Box):
 
         scroll.set_child(content)
         self.append(scroll)
+        GLib.idle_add(self._refresh_mux_backend)
+
+    def set_service(self, service):
+        self.service = service
+        GLib.idle_add(self._refresh_mux_backend)
+
+    def _refresh_mux_backend(self):
+        if not self.service:
+            self.mux_status.set_label(T("mux_not_found"))
+            return False
+        try:
+            info = json.loads(self.service.GetGpuInfo())
+            available = info.get("available_backends", [])
+            forced = info.get("forced_backend", "auto")
+            labels = [T("mux_auto")] + available
+
+            self._updating_mux_dd = True
+            self._mux_backends = available[:]
+            self.mux_dd.set_model(Gtk.StringList.new(labels))
+            if forced == "auto":
+                self.mux_dd.set_selected(0)
+            elif forced in available:
+                self.mux_dd.set_selected(available.index(forced) + 1)
+            else:
+                self.mux_dd.set_selected(0)
+            self._updating_mux_dd = False
+
+            active_backend = info.get("backend", "none")
+            self.mux_status.set_label(f"Active backend: {active_backend}")
+        except Exception as e:
+            self._updating_mux_dd = False
+            self.mux_status.set_label(f"{T('error')}: {e}")
+        return False
+
+    def _on_mux_backend(self, dd, _):
+        if self._updating_mux_dd or not self.service:
+            return
+        idx = dd.get_selected()
+        backend = "auto" if idx == 0 else self._mux_backends[idx - 1]
+        try:
+            res = self.service.SetMuxBackend(backend)
+            if res != "OK":
+                self.mux_status.set_label(f"{T('error')}: {res}")
+                return
+            GLib.timeout_add(300, self._refresh_mux_backend)
+        except Exception as e:
+            self.mux_status.set_label(f"{T('error')}: {e}")
 
     # ── Update Checker ──
     def _check_update(self, btn):

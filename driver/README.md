@@ -24,28 +24,28 @@ A Linux kernel module that adds manual fan speed control and keyboard RGB backli
 
 ### Quick Install (All Distros)
 
-The included `install.sh` script auto-detects your distro, installs dependencies, and sets up DKMS:
+The included `setup.sh` script auto-detects your distro, installs dependencies, and sets up DKMS:
 
 ```bash
 git clone https://github.com/yunusemreyl/OmenCommandCenterforLinux
 cd OmenCommandCenterforLinux/driver
-sudo ./install.sh
+sudo ./setup.sh
 ```
 
 Supported distros: **Ubuntu/Debian**, **Fedora/RHEL**, **Arch/Manjaro**, **openSUSE**, **Void**, **Gentoo**, and derivatives.
 
 To uninstall:
 ```bash
-sudo ./install.sh uninstall
+sudo ./setup.sh uninstall
 ```
 
 ### Optimized Kernels (CachyOS, Arch Clang, etc.)
 
-If your kernel was compiled with Clang/LLVM (e.g., CachyOS), the build process needs to use the same toolchain. The `install.sh` and `Makefile` now automatically detect this by checking `/proc/version`.
+If your kernel was compiled with Clang/LLVM (e.g., CachyOS), the build process needs to use the same toolchain. The `setup.sh` and `Makefile` now automatically detect this by checking `/proc/version`.
 
 If the detection fails, you can force it manually with:
 ```bash
-sudo LLVM=1 ./install.sh
+sudo LLVM=1 ./setup.sh
 ```
 
 ### Manual DKMS Install

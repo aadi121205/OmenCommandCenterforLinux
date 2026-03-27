@@ -1,5 +1,7 @@
 # GitHub Ignore List
 bugfix/
+fixes.md
+fixed.md
 SSDTFiles/
 .idea/
 .vscode/
