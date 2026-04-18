@@ -65,7 +65,10 @@ TRANSLATIONS = {
         "hardware_profile": "Donanım Profili", "resources": "Kaynak Kullanımı",
         "quick_actions": "Hızlı Aksiyonlar", "clean_memory": "Belleği Temizle",
         "max_fan": "Turbo Fan", "eco_mode": "Eko Modu",
+        "go_performance": "Performans sekmesine git",
+        "fan_metric": "Fan",
         "disk": "Disk", "ram": "RAM",
+        "cpu_load_30s": "CPU Yükü (Son 30 sn)",
         "power_profile_label": "Güç Profili", "fan_mode_label": "Fan Modu",
         "gpu_mux_label": "GPU / MUX",
         "battery": "Batarya", "ac_power": "Güç Kablosu",
@@ -79,6 +82,13 @@ TRANSLATIONS = {
         "driver_status": "SÜRÜCÜ DURUMU",
         "loaded": "✓ Yüklü", "not_loaded": "✗ Yüklü Değil",
         "developer": "Geliştirici",
+        "home_subtitle": "Modül seçerek devam edin",
+        "debug_info_title": "Tanılama ve Hata Ayıklama",
+        "show_debug_info": "Hata Ayıklama Bilgilerini Göster",
+        "copy_debug_log": "Tanı Bilgilerini Kopyala",
+        "copied_to_clipboard": "Panoya kopyalandı",
+        "debug_console_title": "Sistem Tanı Konsolu",
+        "debug_collecting": "Sistem bilgileri toplanıyor...\nWMI bağlantısı kuruluyor...\nDMI tabloları okunuyor...\nKernel logları analiz ediliyor...\n\nLütfen bekleyin...",
         "disclaimer": "Bu aracın <b>Hewlett Packard</b> ile resmi bir bağlantısı bulunmamaktadır.",
         "update_checking": "Kontrol ediliyor...",
         "new_ver_available": "Yeni sürüm mevcut",
@@ -161,7 +171,10 @@ TRANSLATIONS = {
         "hardware_profile": "Hardware Profile", "resources": "Resources",
         "quick_actions": "Quick Actions", "clean_memory": "Clean Memory",
         "max_fan": "MAX Fan", "eco_mode": "Eco Mode",
+        "go_performance": "Go to Performance",
+        "fan_metric": "Fan",
         "disk": "Disk", "ram": "RAM",
+        "cpu_load_30s": "CPU Load (Last 30s)",
         "power_profile_label": "Power Profile", "fan_mode_label": "Fan Mode",
         "gpu_mux_label": "GPU / MUX",
         "battery": "Battery", "ac_power": "Power Cable",
@@ -175,6 +188,13 @@ TRANSLATIONS = {
         "driver_status": "DRIVER STATUS",
         "loaded": "✓ Loaded", "not_loaded": "✗ Not Loaded",
         "developer": "Developer",
+        "home_subtitle": "Choose a module to continue",
+        "debug_info_title": "Diagnostic and Debug",
+        "show_debug_info": "Show Debug Info",
+        "copy_debug_log": "Copy Debug Info",
+        "copied_to_clipboard": "Copied to clipboard",
+        "debug_console_title": "System Diagnostic Console",
+        "debug_collecting": "Gathering system information...\nConnecting to WMI...\nReading DMI tables...\nAnalyzing kernel logs...\n\nPlease wait...",
         "disclaimer": "This tool has no official affiliation with <b>Hewlett Packard</b>.",
         "update_checking": "Checking...",
         "new_ver_available": "New version available",
@@ -210,7 +230,14 @@ def T(key):
 def set_lang(lang):
     """Set the active language globally."""
     global active_lang
-    active_lang = lang
+    normalized = str(lang or "").strip().lower()
+    if normalized.startswith("tr") or "türk" in normalized or "turk" in normalized:
+        active_lang = "tr"
+        return
+    if normalized.startswith("en") or "english" in normalized:
+        active_lang = "en"
+        return
+    active_lang = normalized if normalized in TRANSLATIONS else "tr"
 
 
 def get_lang():

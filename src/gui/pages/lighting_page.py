@@ -38,6 +38,8 @@ class LightingPage(Gtk.Box):
     def __init__(self, service=None):
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=20)
         self.service = service
+        self._zone_buttons = []
+        self._preset_buttons = []
         self.set_margin_top(30)
         self.set_margin_start(40)
         self.set_margin_end(40)
@@ -134,6 +136,7 @@ class LightingPage(Gtk.Box):
         scroll = Gtk.ScrolledWindow(vexpand=True)
         scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
         content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=20)
+        self._content_box = content
 
         # Keyboard Preview
         preview_frame = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
@@ -158,6 +161,7 @@ class LightingPage(Gtk.Box):
                     btn.set_active(True)
                 btn.connect("toggled", lambda w, idx=i: self._on_zone_select(idx) if w.get_active() else None)
                 zone_box.append(btn)
+                self._zone_buttons.append(btn)
             content.append(zone_box)
 
         # Controls Card
@@ -195,6 +199,7 @@ class LightingPage(Gtk.Box):
             btn.set_size_request(32, 32)
             btn.connect("clicked", lambda w, c=hex_color: self._on_color(c))
             color_box.append(btn)
+            self._preset_buttons.append(btn)
             
             # Dynamic CSS for the specific color glow
             dyn_css += f"""
@@ -215,8 +220,10 @@ class LightingPage(Gtk.Box):
         pick_btn.set_size_request(32, 32)
         pick_btn.connect("clicked", self._open_picker)
         color_box.append(pick_btn)
+        self._pick_btn = pick_btn
         row1.append(color_box)
         card.append(row1)
+        self._controls_card = card
 
         card.append(Gtk.Separator())
 
@@ -249,12 +256,58 @@ class LightingPage(Gtk.Box):
         self.brightness_scale.set_size_request(160, -1)
         self.brightness_scale.connect("value-changed", self._on_brightness)
         grid.attach(self.brightness_scale, 3, 1, 1, 1)
+        self._effects_grid = grid
 
         card.append(grid)
         content.append(card)
 
         scroll.set_child(content)
         self.append(scroll)
+        self.set_ui_scale("normal")
+
+    def set_ui_scale(self, bucket, _width=0, _height=0):
+        if bucket == "compact":
+            self.set_spacing(14)
+            self.set_margin_top(14)
+            self.set_margin_start(16)
+            self.set_margin_end(16)
+            self.set_margin_bottom(14)
+        elif bucket == "spacious":
+            self.set_spacing(24)
+            self.set_margin_top(36)
+            self.set_margin_start(48)
+            self.set_margin_end(48)
+            self.set_margin_bottom(34)
+        else:
+            self.set_spacing(20)
+            self.set_margin_top(30)
+            self.set_margin_start(40)
+            self.set_margin_end(40)
+            self.set_margin_bottom(30)
+
+        content = getattr(self, "_content_box", None)
+        if content is not None:
+            content.set_spacing(16 if bucket == "compact" else 24 if bucket == "spacious" else 20)
+
+        btn_side = 28 if bucket == "compact" else 36 if bucket == "spacious" else 32
+        for btn in getattr(self, "_preset_buttons", []):
+            btn.set_size_request(btn_side, btn_side)
+        if hasattr(self, "_pick_btn") and self._pick_btn is not None:
+            self._pick_btn.set_size_request(btn_side, btn_side)
+
+        for btn in getattr(self, "_zone_buttons", []):
+            btn.set_size_request(88 if bucket == "compact" else 122 if bucket == "spacious" else 104, -1)
+
+        slider_w = 128 if bucket == "compact" else 190 if bucket == "spacious" else 160
+        if hasattr(self, "speed_scale") and self.speed_scale is not None:
+            self.speed_scale.set_size_request(slider_w, -1)
+        if hasattr(self, "brightness_scale") and self.brightness_scale is not None:
+            self.brightness_scale.set_size_request(slider_w, -1)
+
+        grid = getattr(self, "_effects_grid", None)
+        if grid is not None:
+            grid.set_column_spacing(18 if bucket == "compact" else 36 if bucket == "spacious" else 30)
+            grid.set_row_spacing(12 if bucket == "compact" else 18 if bucket == "spacious" else 15)
 
     def _on_zone_select(self, zone):
         self.selected_zone = zone

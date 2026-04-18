@@ -104,6 +104,7 @@ class MUXPage(Gtk.Box):
         scroll = Gtk.ScrolledWindow(vexpand=True)
         scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
         scroll_content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=20)
+        self._scroll_content = scroll_content
 
         # GPU info card
         gpu_info = _get_nvidia_info()
@@ -153,6 +154,7 @@ class MUXPage(Gtk.Box):
         igpu_icon = Gtk.Image.new_from_icon_name("battery-symbolic")
         igpu_icon.set_pixel_size(80)
         igpu_icon.set_halign(Gtk.Align.CENTER)
+        self._igpu_icon = igpu_icon
         self.btn_igpu = Gtk.ToggleButton(child=igpu_icon)
         self.btn_igpu.add_css_class("mux-btn")
         self.btn_igpu.connect("toggled",
@@ -174,6 +176,7 @@ class MUXPage(Gtk.Box):
         dgpu_icon = Gtk.Image.new_from_icon_name("video-display-symbolic")
         dgpu_icon.set_pixel_size(80)
         dgpu_icon.set_halign(Gtk.Align.CENTER)
+        self._dgpu_icon = dgpu_icon
         self.btn_dgpu = Gtk.ToggleButton(child=dgpu_icon)
         self.btn_dgpu.add_css_class("mux-btn")
         self.btn_dgpu.set_group(self.btn_igpu)
@@ -196,6 +199,7 @@ class MUXPage(Gtk.Box):
                                     spacing=10, halign=Gtk.Align.CENTER)
         hybrid_icon = Gtk.Image.new_from_icon_name("preferences-system-symbolic")
         hybrid_icon.set_pixel_size(80)
+        self._hybrid_icon = hybrid_icon
         self.btn_hybrid = Gtk.ToggleButton(child=hybrid_icon)
         self.btn_hybrid.add_css_class("mux-btn")
         self.btn_hybrid.set_group(self.btn_igpu)
@@ -265,6 +269,52 @@ class MUXPage(Gtk.Box):
         sig.set_margin_bottom(4)
         sig.add_css_class("stat-lbl")
         self.append(sig)
+        self._signature_label = sig
+        self.set_ui_scale("normal")
+
+    def set_ui_scale(self, bucket, _width=0, _height=0):
+        if bucket == "compact":
+            self.set_spacing(14)
+            self.set_margin_top(14)
+            self.set_margin_start(16)
+            self.set_margin_end(16)
+            self.set_margin_bottom(14)
+        elif bucket == "spacious":
+            self.set_spacing(24)
+            self.set_margin_top(36)
+            self.set_margin_start(48)
+            self.set_margin_end(48)
+            self.set_margin_bottom(34)
+        else:
+            self.set_spacing(20)
+            self.set_margin_top(30)
+            self.set_margin_start(40)
+            self.set_margin_end(40)
+            self.set_margin_bottom(30)
+
+        content = getattr(self, "_scroll_content", None)
+        if content is not None:
+            content.set_spacing(14 if bucket == "compact" else 24 if bucket == "spacious" else 20)
+
+        self.mux_box.set_spacing(12 if bucket == "compact" else 26 if bucket == "spacious" else 20)
+
+        icon_size = 64 if bucket == "compact" else 92 if bucket == "spacious" else 80
+        for icon in (getattr(self, "_igpu_icon", None), getattr(self, "_dgpu_icon", None), getattr(self, "_hybrid_icon", None)):
+            if icon is not None:
+                icon.set_pixel_size(icon_size)
+
+        btn_size = 72 if bucket == "compact" else 96 if bucket == "spacious" else 84
+        for mode in ("integrated", "discrete", "hybrid"):
+            btn = self.mode_buttons.get(mode)
+            if btn is not None:
+                btn.set_size_request(btn_size, btn_size)
+
+        if hasattr(self, "warn_card") and self.warn_card is not None:
+            self.warn_card.set_margin_top(6 if bucket == "compact" else 14 if bucket == "spacious" else 10)
+
+        sig = getattr(self, "_signature_label", None)
+        if sig is not None:
+            sig.set_margin_end(6 if bucket == "compact" else 10 if bucket == "spacious" else 8)
 
     # ── Mode selection logic ──────────────────────────────────────────────────
     def _on_mode_select(self, mode):
@@ -281,13 +331,6 @@ class MUXPage(Gtk.Box):
         """Apply the mode; ask for reboot confirmation only if needed."""
         if not self.service:
             return
-
-        if self.backend in ("envycontrol", "supergfxctl", "prime-select"):
-            ok, err = self._run_backend_with_auth(mode)
-            if not ok:
-                self.status_label.set_label(f"{T('error')}: {err}")
-                self._restore_button()
-                return
 
         try:
             result = self.service.SetGpuMode(mode)
@@ -346,34 +389,6 @@ class MUXPage(Gtk.Box):
                 self.status_label.set_label(
                     f"{T('mode_set').format(mode=self.current_mode)} "
                     f"({T('error')}: reboot: {e})")
-
-    def _run_backend_with_auth(self, mode):
-        """Run external MUX command through pkexec so the user gets an on-screen auth prompt."""
-        try:
-            if self.backend == "envycontrol":
-                # Keep -S first for compatibility with user reports, fallback to -s.
-                shell_cmd = f"envycontrol -S {mode} || envycontrol -s {mode}"
-                human_cmd = f"sudo envycontrol -S {mode}"
-            elif self.backend == "supergfxctl":
-                mapped = {"hybrid": "Hybrid", "discrete": "Dedicated", "integrated": "Integrated"}.get(mode, mode)
-                shell_cmd = f"supergfxctl -m {mapped}"
-                human_cmd = f"sudo supergfxctl -m {mapped}"
-            elif self.backend == "prime-select":
-                mapped = {"hybrid": "on-demand", "discrete": "nvidia", "integrated": "intel"}.get(mode, mode)
-                shell_cmd = f"prime-select {mapped}"
-                human_cmd = f"sudo prime-select {mapped}"
-            else:
-                return True, ""
-
-            subprocess.run(["pkexec", "/bin/sh", "-lc", shell_cmd], check=True, timeout=120)
-            self.status_label.set_label(f"{T('mode_set').format(mode=mode)} [{human_cmd}]")
-            return True, ""
-        except FileNotFoundError:
-            return False, "pkexec not found"
-        except subprocess.CalledProcessError as e:
-            return False, f"auth/backend command failed ({e})"
-        except Exception as e:
-            return False, str(e)
 
     # ── Data refresh ──────────────────────────────────────────────────────────
     def _refresh(self):

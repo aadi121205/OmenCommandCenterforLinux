@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Fan & Power Control Page — v1.2.3 with i18n.
+Fan & Power Control Page — v1.3.0 with i18n.
 """
 import os, json, subprocess, shutil, glob, threading, time
 import gi
@@ -34,6 +34,9 @@ class FanSparkline(Gtk.DrawingArea):
         self.history.pop(0)
         self.history.append(val)
         self.queue_draw()
+
+    def set_chart_size(self, width, height):
+        self.set_size_request(int(width), int(height))
 
     def _draw(self, _, cr, w, h):
         cr.set_line_width(2)
@@ -93,27 +96,10 @@ class RotatingFanWidget(Gtk.DrawingArea):
         self.set_size_request(size, size)
         self.val = 0
         self.txt = "0 RPM"
-        self.rotation = 0.0
-        self.fan_surface = None
+        self.rotation = 0.0  # phase value for subtle gauge glow animation
         self._dark = True
-        
-        # Path check: src/gui/pages -> (3 levels up) -> images, or /usr/share/hp-manager/gui/pages -> (2 levels up) -> images
-        _base = os.path.dirname(os.path.abspath(__file__))
-        img_path = None
-        for levels in [3, 2]:
-            p = _base
-            for _ in range(levels): p = os.path.dirname(p)
-            potential = os.path.join(p, "images", "fanpage.png")
-            if os.path.exists(potential):
-                img_path = potential
-                break
-        
-        if img_path:
-            try:
-                self.fan_surface = cairo.ImageSurface.create_from_png(img_path)
-            except Exception as e:
-                print(f"Failed to load fan image: {e}")
-                
+        self.theme = "balanced"
+
         self.set_draw_func(self._draw)
 
     def set_val(self, value, text):
@@ -124,84 +110,109 @@ class RotatingFanWidget(Gtk.DrawingArea):
     def set_dark(self, is_dark):
         self._dark = is_dark
         self.queue_draw()
+
+    def set_theme(self, theme):
+        self.theme = theme if theme in ("eco", "balanced", "performance") else "balanced"
+        self.queue_draw()
+
+    def set_diameter(self, size):
+        s = max(96, int(size))
+        self.set_size_request(s, s)
         
     def tick_rotation(self, max_rpm=6000):
-        if not self.fan_surface or self.val <= 0:
+        if self.val <= 0:
             return
-            
-        try:
-            rpm = int(''.join(c for c in self.txt if c.isdigit()))
-        except ValueError:
-            rpm = (self.val / 100) * max_rpm
-            
-        if rpm > 0:
-            base_increment = 0.1
-            scale = rpm / max_rpm
-            self.rotation += base_increment + (0.3 * scale)
-            if self.rotation >= 2 * math.pi:
-                self.rotation -= 2 * math.pi
-            self.queue_draw()
+
+        speed = 0.04 + (self.val / 100.0) * 0.14
+        self.rotation += speed
+        if self.rotation >= 2 * math.pi:
+            self.rotation -= 2 * math.pi
+        self.queue_draw()
 
     def _draw(self, _, cr, w, h):
         cx, cy = w / 2, h / 2
-        r = min(cx, cy) - 10
-        inner_r = r - 12
+        radius = min(cx, cy) - 8
+        track_width = max(14, radius * 0.26)
+        inner_r = radius - (track_width * 0.58)
+        pct = max(0.0, min(100.0, float(self.val))) / 100.0
 
-        # 1. Background ring
-        cr.set_line_width(4)
-        if self._dark:
-            cr.set_source_rgba(1, 1, 1, 0.05)
+        if self.theme == "eco":
+            c0 = (0.35, 0.92, 0.56)
+            c1 = (0.16, 0.69, 0.34)
+            glow = (0.82, 1.0, 0.90)
+        elif self.theme == "performance":
+            c0 = (1.0, 0.46, 0.35)
+            c1 = (0.86, 0.20, 0.18)
+            glow = (1.0, 0.90, 0.86)
         else:
-            cr.set_source_rgba(0, 0, 0, 0.05)
-        cr.arc(cx, cy, r - 2, 0, 2 * math.pi)
+            c0 = (0.10, 0.86, 1.00)
+            c1 = (0.15, 0.55, 1.00)
+            glow = (0.88, 0.97, 1.0)
+
+        # Outer contour ring
+        cr.set_line_width(2.2)
+        if self._dark:
+            cr.set_source_rgba(0.56, 0.64, 0.74, 0.20)
+        else:
+            cr.set_source_rgba(0.10, 0.12, 0.16, 0.20)
+        cr.arc(cx, cy, radius + 1.5, 0, 2 * math.pi)
         cr.stroke()
 
-        # 2. Progress ring (RPM scale)
-        if self.val > 0:
-            cr.set_line_width(4)
-            # Gradient color based on intensity
-            if self.val > 80: cr.set_source_rgb(1.0, 0.2, 0.2) # Redish
-            elif self.val > 50: cr.set_source_rgb(1.0, 0.6, 0.2) # Orange
-            else: cr.set_source_rgb(0.2, 0.6, 1.0) # Blueish
-            
-            start_angle = -math.pi / 2
-            cr.arc(cx, cy, r - 2, start_angle, start_angle + (self.val / 100) * 2 * math.pi)
-            cr.stroke()
-
-        # 3. Fan Image
-        if self.fan_surface is not None:
-            cr.save()
-            cr.translate(cx, cy)
-            cr.rotate(self.rotation)
-            
-            img_w = self.fan_surface.get_width()
-            img_h = self.fan_surface.get_height()
-            
-            scale_x = (inner_r * 2) / img_w
-            scale_y = (inner_r * 2) / img_h
-            scale = min(scale_x, scale_y)
-            
-            cr.scale(scale, scale)
-            cr.set_source_surface(self.fan_surface, -img_w / 2, -img_h / 2)
-            
-            opacity = 0.2 if self.val == 0 else 0.4 + (0.6 * (self.val / 100))
-            if self._dark:
-                cr.paint_with_alpha(opacity)
-            else:
-                cr.save()
-                cr.paint_with_alpha(opacity)
-                cr.set_source_rgba(0, 0, 0, 1.0)
-                cr.set_operator(cairo.OPERATOR_SOURCE)
-                cr.mask_surface(self.fan_surface, -img_w / 2, -img_h / 2)
-                cr.restore()
-            cr.restore()
+        # Thick base track
+        cr.set_line_width(track_width)
+        cr.set_line_cap(cairo.LINE_CAP_ROUND)
+        if self._dark:
+            cr.set_source_rgba(0.25, 0.30, 0.38, 0.72)
         else:
-            cr.arc(cx, cy, inner_r, 0, 2 * math.pi)
-            if self._dark:
-                cr.set_source_rgba(1, 1, 1, 0.1)
-            else:
-                cr.set_source_rgba(0, 0, 0, 0.1)
-            cr.fill()
+            cr.set_source_rgba(0.74, 0.78, 0.84, 0.82)
+        cr.arc(cx, cy, radius - track_width * 0.5, 0, 2 * math.pi)
+        cr.stroke()
+
+        # Progress arc with cyan-blue gradient, similar to Legion-style heavy gauge
+        start = -math.pi / 2
+        end = start + (pct * 2 * math.pi)
+        grad = cairo.LinearGradient(cx - radius, cy - radius, cx + radius, cy + radius)
+        if self._dark:
+            grad.add_color_stop_rgba(0.0, c0[0], c0[1], c0[2], 0.96)
+            grad.add_color_stop_rgba(1.0, c1[0], c1[1], c1[2], 0.96)
+        else:
+            grad.add_color_stop_rgba(0.0, c0[0], c0[1], c0[2], 0.90)
+            grad.add_color_stop_rgba(1.0, c1[0], c1[1], c1[2], 0.90)
+        cr.set_source(grad)
+        cr.arc(cx, cy, radius - track_width * 0.5, start, end)
+        cr.stroke()
+
+        # Endpoint glow cap
+        ex = cx + math.cos(end) * (radius - track_width * 0.5)
+        ey = cy + math.sin(end) * (radius - track_width * 0.5)
+        pulse = 0.80 + 0.20 * math.sin(self.rotation * 1.7)
+        cr.set_source_rgba(glow[0], glow[1], glow[2], 0.70 * pulse)
+        cr.arc(ex, ey, max(2.6, track_width * 0.17), 0, 2 * math.pi)
+        cr.fill()
+
+        # Inner hub glow
+        hub = cairo.RadialGradient(cx, cy, inner_r * 0.18, cx, cy, inner_r)
+        if self._dark:
+            hub.add_color_stop_rgba(0.0, 0.05, 0.07, 0.10, 0.86)
+            hub.add_color_stop_rgba(1.0, 0.03, 0.04, 0.06, 0.34)
+        else:
+            hub.add_color_stop_rgba(0.0, 0.93, 0.95, 0.98, 0.88)
+            hub.add_color_stop_rgba(1.0, 0.86, 0.89, 0.94, 0.52)
+        cr.set_source(hub)
+        cr.arc(cx, cy, inner_r, 0, 2 * math.pi)
+        cr.fill()
+
+        # Center value text
+        value_txt = f"{int(round(self.val))}%"
+        cr.select_font_face("JetBrains Mono", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_BOLD)
+        cr.set_font_size(max(15, radius * 0.37))
+        te = cr.text_extents(value_txt)
+        cr.move_to(cx - (te.width / 2 + te.x_bearing), cy + 2)
+        if self._dark:
+            cr.set_source_rgba(0.93, 0.96, 1.0, 0.95)
+        else:
+            cr.set_source_rgba(0.10, 0.16, 0.24, 0.92)
+        cr.show_text(value_txt)
 
 def T(k):
     from i18n import T as _T
@@ -229,6 +240,8 @@ class SystemMonitor(threading.Thread):
         super().__init__(daemon=True)
         self.service_provider = service_provider
         self.running = True
+        self._active_event = threading.Event()
+        self._active_event.set()
         self.lock = threading.Lock()
         self.data = {
             "cpu_temp": 0.0,
@@ -247,8 +260,18 @@ class SystemMonitor(threading.Thread):
     def set_collect_sensors(self, enabled):
         self._collect_sensors = bool(enabled)
 
+    def set_active(self, active):
+        if active:
+            self._active_event.set()
+        else:
+            self._active_event.clear()
+
     def run(self):
         while self.running:
+            if not self._active_event.is_set():
+                time.sleep(4.0)
+                continue
+
             c, g = 0.0, 0.0
             fi, pp, si = {}, {}, {}
             service = self.service_provider()
@@ -346,14 +369,16 @@ class SystemMonitor(threading.Thread):
 
     def stop(self):
         self.running = False
+        self._active_event.set()
 
 
 class FanPage(Gtk.Box):
-    def __init__(self, service=None):
+    def __init__(self, service=None, on_profile_change=None):
         super().__init__()
         self.set_orientation(Gtk.Orientation.VERTICAL)
         self.set_spacing(0)
         self.service = service
+        self.on_profile_change = on_profile_change
         self.fan_mode = "standard" # Default to standard, will sync later
         self._curve_timer = None
         self._sensors_expanded = False
@@ -364,14 +389,42 @@ class FanPage(Gtk.Box):
         self.last_applied_rpm = {} # {fan_idx: rpm}
         
         self._block_sync = False  # Prevents UI reverting due to stale cached data
+        self._profile_card_boxes = []
 
         self.monitor = SystemMonitor(lambda: self.service)
         self.monitor.start()
 
         self._build_ui()
-        self._timer = GLib.timeout_add(1500, self._refresh) # Increased interval slightly
-        self._anim_timer = GLib.timeout_add(40, self._anim_tick) # 25 FPS is enough
+        self._timer = None
+        self._anim_timer = None
+        self.connect("map", self._on_map)
+        self.connect("unmap", self._on_unmap)
         self._sensor_widgets = {} # Storage for efficient sensor updates
+
+    def _start_timers(self):
+        if self._timer is None:
+            self._timer = GLib.timeout_add(1500, self._refresh)
+        if self._anim_timer is None:
+            self._anim_timer = GLib.timeout_add(40, self._anim_tick)
+
+    def _stop_timers(self):
+        if self._timer:
+            GLib.source_remove(self._timer)
+            self._timer = None
+        if self._anim_timer:
+            GLib.source_remove(self._anim_timer)
+            self._anim_timer = None
+
+    def _on_map(self, *_args):
+        self.monitor.set_active(True)
+        self.monitor.set_collect_sensors(self._sensors_expanded)
+        self._start_timers()
+        self._refresh()
+
+    def _on_unmap(self, *_args):
+        self.monitor.set_collect_sensors(False)
+        self.monitor.set_active(False)
+        self._stop_timers()
 
     def _anim_tick(self):
         if not self.get_mapped():
@@ -442,21 +495,25 @@ class FanPage(Gtk.Box):
     def _build_ui(self):
         scroll = SmoothScrolledWindow(vexpand=True)
         scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=20)
-        content.set_margin_top(30)
-        content.set_margin_start(40)
-        content.set_margin_end(40)
-        content.set_margin_bottom(30)
+        content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=16)
+        content.set_margin_top(22)
+        content.set_margin_start(28)
+        content.set_margin_end(28)
+        content.set_margin_bottom(22)
+        self._content_box = content
 
         title = Gtk.Label(label=T("fan_control"), xalign=0)
         title.add_css_class("page-title")
         content.append(title)
 
-        # ═══ 1. SYSTEM STATUS CARD ═══
-        fan_temp_card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=15)
-        fan_temp_card.add_css_class("card")
+        # ═══ 1. SYSTEM STATUS SECTION (NO CARD) ═══
+        fan_temp_card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+        fan_temp_card.set_margin_start(2)
+        fan_temp_card.set_margin_end(2)
+        fan_temp_card.set_margin_top(2)
+        fan_temp_card.set_margin_bottom(4)
 
-        ft_header = Gtk.Box(spacing=10)
+        ft_header = Gtk.Box(spacing=8)
         ft_header.append(Gtk.Image.new_from_icon_name("weather-tornado-symbolic"))
         ft_header.append(Gtk.Label(label=T("system_status"), css_classes=["section-title"]))
         fan_temp_card.append(ft_header)
@@ -464,21 +521,22 @@ class FanPage(Gtk.Box):
 
         
 
-        h_box = Gtk.Box.new(Gtk.Orientation.HORIZONTAL, 20)
+        h_box = Gtk.Box.new(Gtk.Orientation.HORIZONTAL, 14)
         h_box.set_homogeneous(True)
-        h_box.set_margin_top(40)
-        h_box.set_margin_bottom(40)
+        h_box.set_margin_top(18)
+        h_box.set_margin_bottom(18)
+        self._fan_metrics_row = h_box
 
         # Fan 1 (CPU)
-        f1_box = Gtk.Box.new(Gtk.Orientation.VERTICAL, 5)
+        f1_box = Gtk.Box.new(Gtk.Orientation.VERTICAL, 4)
         f1_box.set_halign(Gtk.Align.CENTER)
         f1_box.append(Gtk.Label(label="CPU Fan", css_classes=["fan-title"]))
-        self.fan1_gauge = RotatingFanWidget(160)
+        self.fan1_gauge = RotatingFanWidget(132)
         f1_box.append(self.fan1_gauge)
         self.fan1_rpm_lbl = Gtk.Label(label="0 RPM", css_classes=["stat-rpm"])
         f1_box.append(self.fan1_rpm_lbl)
         self.fan1_spark = FanSparkline((0.3, 0.6, 1.0))
-        self.fan1_spark.set_size_request(120, 30)
+        self.fan1_spark.set_size_request(96, 20)
         f1_box.append(self.fan1_spark)
         h_box.append(f1_box)
 
@@ -487,24 +545,26 @@ class FanPage(Gtk.Box):
         temp_center_container.set_halign(Gtk.Align.CENTER)
         temp_center_container.set_valign(Gtk.Align.CENTER)
         
-        temp_circle = Gtk.Box.new(Gtk.Orientation.VERTICAL, 10)
+        temp_circle = Gtk.Box.new(Gtk.Orientation.VERTICAL, 4)
         temp_circle.set_halign(Gtk.Align.CENTER)
         temp_circle.set_valign(Gtk.Align.CENTER)
         temp_circle.add_css_class("temp-circle")
+        temp_circle.set_size_request(118, 118)
+        self._temp_circle = temp_circle
         
         cpu_box = Gtk.Box.new(Gtk.Orientation.VERTICAL, 0)
         cpu_box.append(Gtk.Label(label="CPU", css_classes=["dim-label"]))
-        self.cpu_label = Gtk.Label(label="--°C", css_classes=["title-1"])
+        self.cpu_label = Gtk.Label(label="--°C", css_classes=["title-3"])
         cpu_box.append(self.cpu_label)
         temp_circle.append(cpu_box)
 
         sep = Gtk.Separator.new(Gtk.Orientation.HORIZONTAL)
-        sep.set_size_request(60, -1)
+        sep.set_size_request(38, -1)
         temp_circle.append(sep)
 
         gpu_box = Gtk.Box.new(Gtk.Orientation.VERTICAL, 0)
         gpu_box.append(Gtk.Label(label="GPU", css_classes=["dim-label"]))
-        self.gpu_label = Gtk.Label(label="--°C", css_classes=["title-2"])
+        self.gpu_label = Gtk.Label(label="--°C", css_classes=["title-4"])
         gpu_box.append(self.gpu_label)
         temp_circle.append(gpu_box)
         
@@ -512,15 +572,15 @@ class FanPage(Gtk.Box):
         h_box.append(temp_center_container)
 
         # Fan 2 (GPU)
-        f2_box = Gtk.Box.new(Gtk.Orientation.VERTICAL, 5)
+        f2_box = Gtk.Box.new(Gtk.Orientation.VERTICAL, 4)
         f2_box.set_halign(Gtk.Align.CENTER)
         f2_box.append(Gtk.Label(label="GPU Fan", css_classes=["fan-title"]))
-        self.fan2_gauge = RotatingFanWidget(160)
+        self.fan2_gauge = RotatingFanWidget(132)
         f2_box.append(self.fan2_gauge)
         self.fan2_rpm_lbl = Gtk.Label(label="0 RPM", css_classes=["stat-rpm"])
         f2_box.append(self.fan2_rpm_lbl)
         self.fan2_spark = FanSparkline((0.9, 0.4, 0.1))
-        self.fan2_spark.set_size_request(120, 30)
+        self.fan2_spark.set_size_request(96, 20)
         f2_box.append(self.fan2_spark)
         h_box.append(f2_box)
 
@@ -535,14 +595,14 @@ class FanPage(Gtk.Box):
         self.sensor_pill.add_css_class("pill-frame")
         self.sensor_pill.set_cursor(Gdk.Cursor.new_from_name("pointer"))
         
-        pill_content = Gtk.Box(spacing=10)
-        pill_content.set_margin_top(8)
-        pill_content.set_margin_bottom(8)
-        pill_content.set_margin_start(12)
-        pill_content.set_margin_end(12)
+        pill_content = Gtk.Box(spacing=8)
+        pill_content.set_margin_top(6)
+        pill_content.set_margin_bottom(6)
+        pill_content.set_margin_start(10)
+        pill_content.set_margin_end(10)
         
         self._expander_arrow = Gtk.Image.new_from_icon_name("pan-down-symbolic")
-        self._expander_arrow.set_pixel_size(16)
+        self._expander_arrow.set_pixel_size(14)
         pill_content.append(self._expander_arrow)
         
         self._sensor_label = Gtk.Label(label=T("all_sensors"), css_classes=["stat-lbl"])
@@ -556,83 +616,77 @@ class FanPage(Gtk.Box):
         
         fan_temp_card.append(self.sensor_pill)
 
-        self.sensor_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+        self.sensor_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         self.sensor_box.set_valign(Gtk.Align.START)
         self.sensor_box.set_hexpand(True)
         self.sensor_box.set_visible(False)
-        self.sensor_box.set_margin_top(10)
+        self.sensor_box.set_margin_top(6)
         fan_temp_card.append(self.sensor_box)
         content.append(fan_temp_card)
 
-        # ═══ 2. PERFORMANCE CARD ═══
-        perf_card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=18)
-        perf_card.add_css_class("card")
+        # ═══ 2. FAN CONTROL (PROFILE CARDS + COMPACT MODE) ═══
+        control_panel = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=9)
+        control_panel.add_css_class("fan-cyber-panel")
 
-        pp_header = Gtk.Box(spacing=10)
-        pp_header.append(Gtk.Image.new_from_icon_name("battery-level-80-symbolic"))
-        pp_header.append(Gtk.Label(label=T("power_profile"), css_classes=["section-title"]))
-        perf_card.append(pp_header)
+        power_lbl = Gtk.Label(label=T("power_profile"), xalign=0)
+        power_lbl.add_css_class("fan-control-label")
+        control_panel.append(power_lbl)
 
-        self.profile_box = Gtk.Box(spacing=15, halign=Gtk.Align.CENTER, homogeneous=True)
+        self.profile_strip = Gtk.Box(spacing=8, halign=Gtk.Align.CENTER)
+        self.profile_strip.add_css_class("power-profile-grid")
         self.profile_group = None
-        
         profiles = [
-            ("power-saver", "🔋", T("saver"), T("saver_tooltip")),
-            ("balanced", "⚖️", T("balanced"), T("balanced_tooltip")),
-            ("performance", "🚀", T("performance"), T("performance_tooltip")),
+            ("power-saver", T("saver"), T("saver_tooltip")),
+            ("balanced", T("balanced"), T("balanced_tooltip")),
+            ("performance", T("performance"), T("performance_tooltip")),
         ]
         self.profile_buttons = {}
-        for pid, emoji, label, desc in profiles:
+        for pid, title, desc in profiles:
             btn = Gtk.ToggleButton()
+            btn.add_css_class("power-profile-card")
             btn.set_tooltip_text(desc)
-            
-            btn_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
-            btn_box.set_margin_top(14)
-            btn_box.set_margin_bottom(14)
-            btn_box.set_margin_start(20)
-            btn_box.set_margin_end(20)
-            btn_box.append(Gtk.Label(label=emoji, css_classes=["profile-emoji"]))
-            
-            lbl = Gtk.Label(label=label, css_classes=["profile-label"])
-            lbl.set_margin_bottom(2)
-            btn_box.append(lbl)
 
-            btn.set_child(btn_box)
-            btn.add_css_class("profile-btn")
+            card_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+            card_box.set_margin_top(8)
+            card_box.set_margin_bottom(8)
+            card_box.set_margin_start(10)
+            card_box.set_margin_end(10)
+            self._profile_card_boxes.append(card_box)
+
+            title_lbl = Gtk.Label(label=title, xalign=0)
+            title_lbl.add_css_class("power-profile-title")
+            card_box.append(title_lbl)
+
+            desc_lbl = Gtk.Label(label=desc, xalign=0, wrap=True)
+            desc_lbl.add_css_class("power-profile-desc")
+            desc_lbl.set_max_width_chars(24)
+            card_box.append(desc_lbl)
+
+            btn.set_child(card_box)
+            btn.set_size_request(152, 88)
             if self.profile_group:
                 btn.set_group(self.profile_group)
             else:
                 self.profile_group = btn
             btn.connect("toggled", lambda w, p=pid: self._set_profile(p) if w.get_active() else None)
-            self.profile_box.append(btn)
+            self.profile_strip.append(btn)
             self.profile_buttons[pid] = btn
+        control_panel.append(self.profile_strip)
 
-        perf_card.append(self.profile_box)
-        self.pp_status = Gtk.Label(label=T("checking"), css_classes=["stat-lbl"])
-        perf_card.append(self.pp_status)
-
-        # TLP / auto-cpufreq conflict warning
-        self._pp_conflict_lbl = Gtk.Label(label="", use_markup=True, xalign=0.5, wrap=True)
-        self._pp_conflict_lbl.add_css_class("warning-text")
-        self._pp_conflict_lbl.set_visible(False)
-        perf_card.append(self._pp_conflict_lbl)
-
-        perf_card.append(Gtk.Separator())
-
-        fm_header = Gtk.Box(spacing=10)
-        fm_header.append(Gtk.Image.new_from_icon_name("weather-tornado-symbolic"))
-        fm_header.append(Gtk.Label(label=T("fan_mode"), css_classes=["section-title"]))
-        perf_card.append(fm_header)
+        fan_lbl = Gtk.Label(label=T("fan_mode"), xalign=0)
+        fan_lbl.add_css_class("fan-control-label")
+        fan_lbl.set_margin_top(2)
+        control_panel.append(fan_lbl)
 
         self.mode_selector = Gtk.Box(spacing=0, halign=Gtk.Align.CENTER)
-        self.mode_selector.add_css_class("mode-selector-strip")
+        self.mode_selector.add_css_class("fan-mode-compact-strip")
         self.fan_mode_group = None
         modes = [("standard", T("standard")), ("max", T("max")), ("custom", T("custom"))]
         self.fan_mode_buttons = {}
         for mid, label in modes:
-            btn = Gtk.ToggleButton()
-            btn.add_css_class("fan-mode-btn")
-            btn.set_child(Gtk.Label(label=label))
+            btn = Gtk.ToggleButton(label=label)
+            btn.add_css_class("fan-mode-compact-btn")
+            btn.set_size_request(106, 30)
             if self.fan_mode_group:
                 btn.set_group(self.fan_mode_group)
             else:
@@ -640,11 +694,29 @@ class FanPage(Gtk.Box):
             btn.connect("toggled", lambda w, m=mid: self._on_fan_mode(m) if w.get_active() else None)
             self.mode_selector.append(btn)
             self.fan_mode_buttons[mid] = btn
+        control_panel.append(self.mode_selector)
 
-        perf_card.append(self.mode_selector)
-        self.fan_mode_status = Gtk.Label(label="", css_classes=["stat-lbl"])
-        perf_card.append(self.fan_mode_status)
-        content.append(perf_card)
+        status_row = Gtk.Box(spacing=10)
+        self.pp_status = Gtk.Label(label=T("checking"), xalign=0)
+        self.pp_status.add_css_class("fan-control-status")
+        self.pp_status.set_hexpand(True)
+        self.pp_status.set_halign(Gtk.Align.START)
+        status_row.append(self.pp_status)
+
+        self.fan_mode_status = Gtk.Label(label="", xalign=1)
+        self.fan_mode_status.add_css_class("fan-control-status")
+        self.fan_mode_status.set_hexpand(True)
+        self.fan_mode_status.set_halign(Gtk.Align.END)
+        status_row.append(self.fan_mode_status)
+        control_panel.append(status_row)
+
+        # TLP / auto-cpufreq conflict warning
+        self._pp_conflict_lbl = Gtk.Label(label="", use_markup=True, xalign=0, wrap=True)
+        self._pp_conflict_lbl.add_css_class("warning-text")
+        self._pp_conflict_lbl.set_visible(False)
+        control_panel.append(self._pp_conflict_lbl)
+
+        content.append(control_panel)
 
         # ═══ 3. FAN CURVE ═══
         self.curve_card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=15)
@@ -673,9 +745,65 @@ class FanPage(Gtk.Box):
         
         # Initial mode set (will be updated by daemon sync)
         self.set_fan_mode_ui("standard")
+        self._apply_profile_theme("balanced")
         
         # Fetch power limits async to populate profile tooltips
         self._fetch_hw_power_limits_async()
+        self.set_ui_scale("normal")
+
+    def set_ui_scale(self, bucket, _width=0, _height=0):
+        content = getattr(self, "_content_box", None)
+        if content is not None:
+            if bucket == "compact":
+                content.set_spacing(12)
+                content.set_margin_top(12)
+                content.set_margin_start(14)
+                content.set_margin_end(14)
+                content.set_margin_bottom(12)
+            elif bucket == "spacious":
+                content.set_spacing(18)
+                content.set_margin_top(26)
+                content.set_margin_start(34)
+                content.set_margin_end(34)
+                content.set_margin_bottom(26)
+            else:
+                content.set_spacing(16)
+                content.set_margin_top(22)
+                content.set_margin_start(28)
+                content.set_margin_end(28)
+                content.set_margin_bottom(22)
+
+        row = getattr(self, "_fan_metrics_row", None)
+        if row is not None:
+            row.set_spacing(10 if bucket == "compact" else 18 if bucket == "spacious" else 14)
+            row.set_margin_top(12 if bucket == "compact" else 22 if bucket == "spacious" else 18)
+            row.set_margin_bottom(12 if bucket == "compact" else 22 if bucket == "spacious" else 18)
+
+        gauge_size = 114 if bucket == "compact" else 150 if bucket == "spacious" else 132
+        for gauge in (getattr(self, "fan1_gauge", None), getattr(self, "fan2_gauge", None)):
+            if gauge is not None and hasattr(gauge, "set_diameter"):
+                gauge.set_diameter(gauge_size)
+
+        spark_w = 82 if bucket == "compact" else 118 if bucket == "spacious" else 96
+        spark_h = 18 if bucket == "compact" else 24 if bucket == "spacious" else 20
+        for spark in (getattr(self, "fan1_spark", None), getattr(self, "fan2_spark", None)):
+            if spark is not None and hasattr(spark, "set_chart_size"):
+                spark.set_chart_size(spark_w, spark_h)
+
+        temp_circle = getattr(self, "_temp_circle", None)
+        if temp_circle is not None:
+            side = 98 if bucket == "compact" else 132 if bucket == "spacious" else 118
+            temp_circle.set_size_request(side, side)
+
+        profile_btn_w = 134 if bucket == "compact" else 168 if bucket == "spacious" else 152
+        profile_btn_h = 78 if bucket == "compact" else 98 if bucket == "spacious" else 88
+        for btn in getattr(self, "profile_buttons", {}).values():
+            btn.set_size_request(profile_btn_w, profile_btn_h)
+
+        mode_btn_w = 92 if bucket == "compact" else 118 if bucket == "spacious" else 106
+        mode_btn_h = 28 if bucket == "compact" else 34 if bucket == "spacious" else 30
+        for btn in getattr(self, "fan_mode_buttons", {}).values():
+            btn.set_size_request(mode_btn_w, mode_btn_h)
 
     def _unblock_sync(self):
         self._block_sync = False
@@ -683,12 +811,51 @@ class FanPage(Gtk.Box):
 
     def set_fan_mode_ui(self, mode):
         self.fan_mode = mode
-        if mode in self.fan_mode_buttons:
-            self.fan_mode_buttons[mode].set_active(True)
+        if mode in getattr(self, "fan_mode_buttons", {}):
+            btn = self.fan_mode_buttons[mode]
+            if not btn.get_active():
+                prev = self._block_sync
+                self._block_sync = True
+                btn.set_active(True)
+                self._block_sync = prev
+
+    def _apply_profile_theme(self, profile):
+        mode_map = {
+            "power-saver": "eco",
+            "balanced": "balanced",
+            "performance": "performance",
+        }
+        theme = mode_map.get(profile, "balanced")
+
+        for cls in ("fan-theme-eco", "fan-theme-balanced", "fan-theme-performance"):
+            self.remove_css_class(cls)
+        self.add_css_class(f"fan-theme-{theme}")
+
+        self.fan1_gauge.set_theme(theme)
+        self.fan2_gauge.set_theme(theme)
+
+        if theme == "eco":
+            self.fan1_spark.color = (0.35, 0.88, 0.52)
+            self.fan2_spark.color = (0.22, 0.72, 0.36)
+        elif theme == "performance":
+            self.fan1_spark.color = (0.98, 0.44, 0.33)
+            self.fan2_spark.color = (0.84, 0.22, 0.18)
+        else:
+            self.fan1_spark.color = (0.30, 0.60, 1.00)
+            self.fan2_spark.color = (0.18, 0.50, 0.95)
+
+        self.fan1_spark.queue_draw()
+        self.fan2_spark.queue_draw()
+
+        if callable(self.on_profile_change):
+            try:
+                self.on_profile_change(profile)
+            except Exception:
+                pass
 
     def _toggle_sensors(self, btn):
         self._sensors_expanded = not self._sensors_expanded
-        self.monitor.set_collect_sensors(self._sensors_expanded)
+        self.monitor.set_collect_sensors(self._sensors_expanded and self.get_mapped())
         self.sensor_box.set_visible(self._sensors_expanded)
         self._expander_arrow.set_from_icon_name(
             "pan-up-symbolic" if self._sensors_expanded else "pan-down-symbolic")
@@ -701,16 +868,16 @@ class FanPage(Gtk.Box):
             while child := self.sensor_box.get_first_child():
                 self.sensor_box.remove(child)
                 
-            self._sensor_grid = Gtk.Grid(column_spacing=20, row_spacing=20)
+            self._sensor_grid = Gtk.Grid(column_spacing=12, row_spacing=10)
             self._sensor_grid.set_column_homogeneous(True)
             self._sensor_grid.set_hexpand(True)
             self.sensor_box.append(self._sensor_grid)
             
-            self._cpu_pill = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8, css_classes=["card"])
+            self._cpu_pill = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, css_classes=["sensor-pod"])
             self._cpu_pill.append(self._pill_header("CPU", "processor-symbolic"))
             self._sensor_grid.attach(self._cpu_pill, 0, 0, 1, 1)
             
-            self._other_pill = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8, css_classes=["card"])
+            self._other_pill = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, css_classes=["sensor-pod"])
             self._other_pill.append(self._pill_header(T("other_sensors"), "view-list-symbolic"))
             self._sensor_grid.attach(self._other_pill, 1, 0, 1, 1)
 
@@ -723,10 +890,10 @@ class FanPage(Gtk.Box):
                 lbl, bar = self._sensor_widgets[key]
                 lbl.set_label(val_str)
                 # bar is a Box, we can update its width to show intensity
-                bar.set_size_request(int(min(s['temp'], 100)), 2) 
+                bar.set_size_request(int(min(s['temp'], 70)), 2) 
             else:
                 # Create refined sensor row
-                row = Gtk.Box(spacing=12)
+                row = Gtk.Box(spacing=8)
                 row.add_css_class("sensor-card-item")
                 
                 name_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, hexpand=True)
@@ -737,12 +904,12 @@ class FanPage(Gtk.Box):
                 # Tiny progress-like bar under the name
                 bar = Gtk.Box(height_request=2, hexpand=False, halign=Gtk.Align.START)
                 bar.add_css_class("sensor-bar")
-                bar.set_size_request(int(min(s['temp'], 80)), 2)
+                bar.set_size_request(int(min(s['temp'], 70)), 2)
                 name_box.append(bar)
                 
                 row.append(name_box)
                 
-                temp_lbl = Gtk.Label(label=val_str, xalign=1, css_classes=["stat-big"])
+                temp_lbl = Gtk.Label(label=val_str, xalign=1, css_classes=["sensor-temp-val"])
                 row.append(temp_lbl)
                 
                 self._sensor_widgets[key] = (temp_lbl, bar)
@@ -756,11 +923,11 @@ class FanPage(Gtk.Box):
                     self._other_pill.append(row)
 
     def _pill_header(self, title, icon):
-        box = Gtk.Box(spacing=8)
-        box.set_margin_bottom(10)
+        box = Gtk.Box(spacing=6)
+        box.set_margin_bottom(6)
         img = Gtk.Image.new_from_icon_name(icon)
-        img.set_pixel_size(16)
-        img.set_opacity(0.7)
+        img.set_pixel_size(14)
+        img.set_opacity(0.65)
         box.append(img)
         lbl = Gtk.Label(label=title, xalign=0, css_classes=["section-title"])
         box.append(lbl)
@@ -769,6 +936,7 @@ class FanPage(Gtk.Box):
     def _set_profile(self, profile):
         if self._block_sync:
             return  # Skip triggering if we are programmatically updating UI
+        self._apply_profile_theme(profile)
         self._block_sync = True
         GLib.timeout_add(1500, self._unblock_sync)
         if self.service:
@@ -899,27 +1067,28 @@ class FanPage(Gtk.Box):
         # Sync Power Profile UI
         active_profile = power_profile.get("active", "")
         if active_profile and active_profile in self.profile_buttons and not self._block_sync:
-             btn = self.profile_buttons[active_profile]
-             if not btn.get_active():
-                 # Temporarily block sync so we don't send the command back to daemon
-                 self._block_sync = True
-                 btn.set_active(True)
-                 self._block_sync = False
+            btn = self.profile_buttons[active_profile]
+            if not btn.get_active():
+                # Temporarily block sync so we don't send the command back to daemon
+                self._block_sync = True
+                btn.set_active(True)
+                self._block_sync = False
         
         if active_profile:
-             self.pp_status.set_label(f"{T('active_profile')}: {active_profile}")
+            self.pp_status.set_label(f"{T('active_profile')}: {active_profile}")
+            self._apply_profile_theme(active_profile)
 
         # Handle TLP / auto-cpufreq conflict
         conflict = data.get("power_conflict")
         if conflict:
             # TLP doesn't strictly block profile switching, but auto-cpufreq does.
-            self.profile_box.set_sensitive(conflict != "tlp")
+            self.profile_strip.set_sensitive(conflict != "tlp")
             self._pp_conflict_lbl.set_label(
                 f"<span color='#57e389'>{T('power_managed_by').format(tool=conflict.upper())}</span>")
             self._pp_conflict_lbl.set_visible(True)
             self.pp_status.set_label(f"{T('active_profile')}: {conflict.upper()}")
         else:
-            self.profile_box.set_sensitive(True)
+            self.profile_strip.set_sensitive(True)
             self._pp_conflict_lbl.set_visible(False)
 
         # Sync Fan Data
@@ -960,8 +1129,5 @@ class FanPage(Gtk.Box):
         return True
 
     def cleanup(self):
-        if hasattr(self, '_timer') and self._timer:
-            GLib.source_remove(self._timer)
-        if hasattr(self, '_anim_timer') and self._anim_timer:
-            GLib.source_remove(self._anim_timer)
+        self._stop_timers()
         self.monitor.stop()

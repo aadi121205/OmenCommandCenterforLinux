@@ -53,9 +53,11 @@ class KeyboardPage(Gtk.Box):
         root.set_margin_bottom(24)
         scroll.set_child(root)
         self.append(scroll)
+        self._root_box = root
 
         # Header with Logo
         header = Gtk.Box(spacing=15, valign=Gtk.Align.CENTER)
+        self._header_box = header
         if os.path.exists(self.logo_path):
             from gi.repository import GdkPixbuf, Gdk
             pix = GdkPixbuf.Pixbuf.new_from_file_at_scale(self.logo_path, 48, 48, True)
@@ -75,6 +77,7 @@ class KeyboardPage(Gtk.Box):
         # ── SPECIAL KEYS ──
         keys_card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=15)
         keys_card.add_css_class("card")
+        self._keys_card = keys_card
         keys_card.append(Gtk.Label(label=T("special_keys"), xalign=0, css_classes=["heading"]))
         
         # Removed Omen Key visually per user request.
@@ -90,6 +93,7 @@ class KeyboardPage(Gtk.Box):
         # ── KEYBOARD FIXES (The main meat) ──
         fix_card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=20)
         fix_card.add_css_class("card")
+        self._fix_card = fix_card
         
         fix_header = Gtk.Box(spacing=10)
         fix_header.append(Gtk.Image.new_from_icon_name("system-run-symbolic"))
@@ -122,6 +126,7 @@ class KeyboardPage(Gtk.Box):
 
         # Footer Action
         footer = Gtk.Box(spacing=12, halign=Gtk.Align.END)
+        self._footer_box = footer
         self.apply_btn = Gtk.Button(label=T("apply_shortcuts"))
         self.apply_btn.add_css_class("suggested-action")
         self.apply_btn.connect("clicked", self._on_apply)
@@ -129,6 +134,41 @@ class KeyboardPage(Gtk.Box):
         root.append(footer)
 
         self._sync_state()
+        self.set_ui_scale("normal")
+
+    def set_ui_scale(self, bucket, _width=0, _height=0):
+        root = getattr(self, "_root_box", None)
+        if root is not None:
+            if bucket == "compact":
+                root.set_spacing(16)
+                root.set_margin_top(12)
+                root.set_margin_start(14)
+                root.set_margin_end(14)
+                root.set_margin_bottom(12)
+            elif bucket == "spacious":
+                root.set_spacing(28)
+                root.set_margin_top(30)
+                root.set_margin_start(40)
+                root.set_margin_end(40)
+                root.set_margin_bottom(28)
+            else:
+                root.set_spacing(24)
+                root.set_margin_top(24)
+                root.set_margin_start(32)
+                root.set_margin_end(32)
+                root.set_margin_bottom(24)
+
+        if hasattr(self, "_header_box") and self._header_box is not None:
+            self._header_box.set_spacing(10 if bucket == "compact" else 18 if bucket == "spacious" else 15)
+
+        if hasattr(self, "_keys_card") and self._keys_card is not None:
+            self._keys_card.set_spacing(10 if bucket == "compact" else 18 if bucket == "spacious" else 15)
+
+        if hasattr(self, "_fix_card") and self._fix_card is not None:
+            self._fix_card.set_spacing(14 if bucket == "compact" else 24 if bucket == "spacious" else 20)
+
+        if hasattr(self, "apply_btn") and self.apply_btn is not None:
+            self.apply_btn.set_size_request(150 if bucket == "compact" else 210 if bucket == "spacious" else 180, 38 if bucket == "compact" else 46 if bucket == "spacious" else 42)
 
     def _make_shortcut_row(self, title, desc, icon_name):
         row = Gtk.Box(spacing=15)

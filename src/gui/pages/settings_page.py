@@ -19,7 +19,7 @@ def T(k):
     return _T(k)
 
 
-APP_VERSION = "1.2.4"
+APP_VERSION = "1.3.0"
 GITHUB_REPO = "yunusemreyl/OmenCommandCenterforLinux"
 GITHUB_API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 GITHUB_RELEASES_URL = f"https://github.com/{GITHUB_REPO}/releases/latest"
@@ -49,10 +49,12 @@ class SettingsPage(Gtk.Box):
         scroll = SmoothScrolledWindow(vexpand=True)
         scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
         content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=20)
+        self._content_box = content
 
         # ── Appearance ──
         appear_card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=15)
         appear_card.add_css_class("card")
+        self._appear_card = appear_card
         appear_card.append(Gtk.Label(label=T("appearance"), xalign=0, css_classes=["section-title"]))
 
         # Theme
@@ -88,9 +90,11 @@ class SettingsPage(Gtk.Box):
         # ── Updates ──
         update_card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=15)
         update_card.add_css_class("card")
+        self._update_card = update_card
         update_card.append(Gtk.Label(label=T("updates"), xalign=0, css_classes=["section-title"]))
 
         update_row = Gtk.Box(spacing=15, valign=Gtk.Align.CENTER)
+        self._update_row = update_row
 
         ver_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4, hexpand=True)
         ver_box.append(Gtk.Label(label=f"{T('current_ver')}: v{APP_VERSION}", xalign=0))
@@ -139,6 +143,7 @@ class SettingsPage(Gtk.Box):
         # ── System Info ──
         info_card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=15)
         info_card.add_css_class("card")
+        self._info_card = info_card
         info_card.append(Gtk.Label(label=T("sys_info"), xalign=0, css_classes=["section-title"]))
 
         sys_info = [
@@ -157,6 +162,7 @@ class SettingsPage(Gtk.Box):
         # ── Driver Status ──
         driver_card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=15)
         driver_card.add_css_class("card")
+        self._driver_card = driver_card
         driver_card.append(Gtk.Label(label=T("driver_status"), xalign=0, css_classes=["section-title"]))
 
         hp_rgb_lighting_loaded = self._is_module_loaded("hp_rgb_lighting")
@@ -178,6 +184,7 @@ class SettingsPage(Gtk.Box):
         # ── MUX Backend ──
         mux_card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=15)
         mux_card.add_css_class("card")
+        self._mux_card = mux_card
         mux_card.append(Gtk.Label(label=T("gpu_mux_label"), xalign=0, css_classes=["section-title"]))
 
         mux_row = Gtk.Box(spacing=20)
@@ -194,10 +201,12 @@ class SettingsPage(Gtk.Box):
         # ── About ──
         about_card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=15)
         about_card.add_css_class("card")
+        self._about_card = about_card
 
         about_header = Gtk.Box(spacing=15)
         app_icon = Gtk.Image.new_from_icon_name("computer-symbolic")
         app_icon.set_pixel_size(48)
+        self._about_icon = app_icon
         about_header.append(app_icon)
 
         about_text = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
@@ -216,9 +225,11 @@ class SettingsPage(Gtk.Box):
         # ── Debug Log ──
         debug_card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=15)
         debug_card.add_css_class("card")
-        debug_card.append(Gtk.Label(label=T("debug_info_title") or "Diagnostic & Debug", xalign=0, css_classes=["section-title"]))
+        self._debug_card = debug_card
+        debug_card.append(Gtk.Label(label=T("debug_info_title"), xalign=0, css_classes=["section-title"]))
 
         debug_grid = Gtk.Box(spacing=15, homogeneous=True)
+        self._debug_grid = debug_grid
         
         # Terminal Box
         term_btn = Gtk.Button()
@@ -226,8 +237,9 @@ class SettingsPage(Gtk.Box):
         term_inner = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8, valign=Gtk.Align.CENTER)
         term_icon = Gtk.Image.new_from_icon_name("utilities-terminal-symbolic")
         term_icon.set_pixel_size(32)
+        self._debug_term_icon = term_icon
         term_inner.append(term_icon)
-        term_inner.append(Gtk.Label(label=T("show_debug_info") or "Show Logs", css_classes=["stat-lbl"]))
+        term_inner.append(Gtk.Label(label=T("show_debug_info"), css_classes=["stat-lbl"]))
         term_btn.set_child(term_inner)
         term_btn.connect("clicked", self._show_debug_terminal)
         debug_grid.append(term_btn)
@@ -238,8 +250,9 @@ class SettingsPage(Gtk.Box):
         copy_inner = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8, valign=Gtk.Align.CENTER)
         copy_icon = Gtk.Image.new_from_icon_name("edit-copy-symbolic")
         copy_icon.set_pixel_size(32)
+        self._debug_copy_icon = copy_icon
         copy_inner.append(copy_icon)
-        self.copy_btn_label = Gtk.Label(label=T("copy_debug_log") or "Copy Info", css_classes=["stat-lbl"])
+        self.copy_btn_label = Gtk.Label(label=T("copy_debug_log"), css_classes=["stat-lbl"])
         copy_inner.append(self.copy_btn_label)
         copy_btn.set_child(copy_inner)
         copy_btn.connect("clicked", self._copy_debug_log)
@@ -251,6 +264,56 @@ class SettingsPage(Gtk.Box):
         scroll.set_child(content)
         self.append(scroll)
         GLib.idle_add(self._refresh_mux_backend)
+        self.set_ui_scale("normal")
+
+    def set_ui_scale(self, bucket, _width=0, _height=0):
+        if bucket == "compact":
+            self.set_spacing(14)
+            self.set_margin_top(14)
+            self.set_margin_start(16)
+            self.set_margin_end(16)
+            self.set_margin_bottom(14)
+        elif bucket == "spacious":
+            self.set_spacing(24)
+            self.set_margin_top(36)
+            self.set_margin_start(48)
+            self.set_margin_end(48)
+            self.set_margin_bottom(34)
+        else:
+            self.set_spacing(20)
+            self.set_margin_top(30)
+            self.set_margin_start(40)
+            self.set_margin_end(40)
+            self.set_margin_bottom(30)
+
+        content = getattr(self, "_content_box", None)
+        if content is not None:
+            content.set_spacing(14 if bucket == "compact" else 24 if bucket == "spacious" else 20)
+
+        card_spacing = 12 if bucket == "compact" else 18 if bucket == "spacious" else 15
+        for attr in ("_appear_card", "_update_card", "_info_card", "_driver_card", "_mux_card", "_about_card", "_debug_card"):
+            card = getattr(self, attr, None)
+            if card is not None:
+                card.set_spacing(card_spacing)
+
+        drop_w = 124 if bucket == "compact" else 176 if bucket == "spacious" else 150
+        for dd in (getattr(self, "theme_dd", None), getattr(self, "lang_dd", None), getattr(self, "temp_dd", None), getattr(self, "mux_dd", None)):
+            if dd is not None:
+                dd.set_size_request(drop_w, -1)
+
+        btn_h = 34 if bucket == "compact" else 44 if bucket == "spacious" else 38
+        for btn in (getattr(self, "update_btn", None), getattr(self, "download_btn", None), getattr(self, "install_btn", None), getattr(self, "restart_btn", None)):
+            if btn is not None:
+                btn.set_size_request(-1, btn_h)
+
+        debug_icon_size = 26 if bucket == "compact" else 36 if bucket == "spacious" else 32
+        for icon in (getattr(self, "_debug_term_icon", None), getattr(self, "_debug_copy_icon", None)):
+            if icon is not None:
+                icon.set_pixel_size(debug_icon_size)
+
+        about_icon = getattr(self, "_about_icon", None)
+        if about_icon is not None:
+            about_icon.set_pixel_size(40 if bucket == "compact" else 56 if bucket == "spacious" else 48)
 
     def set_service(self, service):
         self.service = service
@@ -583,13 +646,12 @@ class SettingsPage(Gtk.Box):
     def _copy_done(self, text):
         self.get_clipboard().set(text)
         old_text = self.copy_btn_label.get_label()
-        self.copy_btn_label.set_label(T("copied_to_clipboard") or "Copied!")
+        self.copy_btn_label.set_label(T("copied_to_clipboard"))
         GLib.timeout_add(2000, lambda: self.copy_btn_label.set_label(old_text) or False)
 
     def _show_debug_terminal(self, _):
-        from gi.repository import Adw
-        # Diagnostic Console Window
-        win = Gtk.Window(title="System Diagnostic Console", default_width=800, default_height=550, modal=True)
+        # Diagnostic Console Window (pure GTK so it works even without libadwaita)
+        win = Gtk.Window(title=T("debug_console_title"), default_width=800, default_height=550, modal=True)
         # Try to make it transient if roots are available
         try:
             root = self.get_root()
@@ -600,7 +662,9 @@ class SettingsPage(Gtk.Box):
         win.set_child(main_vbox)
 
         # Simple Header
-        header = Adw.HeaderBar()
+        header = Gtk.HeaderBar()
+        header.set_show_title_buttons(True)
+        header.set_title_widget(Gtk.Label(label=T("debug_console_title")))
         main_vbox.append(header)
 
         # Scrolled Terminal
@@ -612,7 +676,7 @@ class SettingsPage(Gtk.Box):
         main_vbox.append(scrolled)
 
         buffer = text_view.get_buffer()
-        buffer.set_text("Gathering system information...\nConnecting to WMI...\nReading DMI tables...\nAnalyzing kernel logs...\n\nPlease wait...")
+        buffer.set_text(T("debug_collecting"))
         
         def run_diag():
             logs = self._gather_debug_info()

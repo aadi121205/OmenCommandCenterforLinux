@@ -1,5 +1,5 @@
 
- # OMEN Command Center for Linux v1.2.4 #
+ # OMEN Command Center for Linux v1.3.0 #
 <p align="center">
   <img src="images/omenapplogo.png" alt="Logo" width="250">
 
@@ -18,21 +18,20 @@
 
 **OMEN Command Center for Linux** is a native Linux application designed to unlock the full potential of HP Omen and Victus series laptops. It serves as an open-source alternative to the official OMEN Gaming Hub, providing essential controls in a modern, user-friendly interface.
 
-**New in v1.2.4:**
+**New in v1.3.0:**
+
+- 🚀 **Completely Renewed Experience**: OMEN Command Center for Linux was fully renewed in v1.3.0 with a redesigned interface flow, updated page structure, and cleaner cross-page consistency.
+- 📐 **Responsive UI Scaling**: All major pages now adapt to compact, normal, and spacious window sizes for better desktop and small-window usability.
+- 🧭 **Navigation & Header Polish**: Inline page header/back behavior and launcher layout were refined for cleaner page transitions and more consistent navigation.
+- 🌗 **Theme Consistency Improvements**: Light/dark mode readability and dropdown/popover styling were improved for clearer contrast and better visual stability.
+- 🛠️ **Settings Reliability Updates**: Debug info actions and related settings labels were stabilized and aligned with translations.
+
+**Previous in v1.2.4:**
 
 - 🧰 **Kernel Synchronization**: Synced `hp-wmi` driver with the mainline Linux kernel. Added missing board IDs (`8A4D`, `8BCA`, `8C76`) for complete compatibility.
 - 🧪 **MUX Switch Fix (Errno 22 Mitigation)**: Resolved `Invalid Argument (22)` errors during MUX switching on newer models by implementing a 4-byte payload fallback in the WMI query.
 - ⌨️ **KDE Omen Key Shortcut**: The OMEN Key desktop shortcut now activates instantly on KDE Plasma (e.g., CachyOS) without requiring a reboot, using `qdbus` to reload global shortcuts.
 - 🖱️ **Touchpad Keymap**: Restored touchpad toggle keymap support (`KEY_TOUCHPAD_OFF` / `KEY_TOUCHPAD_ON`).
-
-**Previous in v1.2.3:**
-
-- 🌪️ **Fan/Platform Compatibility**: Improved board handling for OMEN MAX / 8D87-class devices by aligning Victus-S parameter paths with confirmed working behavior.
-- 🛠 **Installer Reliability**: DKMS install flow improved to reduce repeat-install conflicts.
-- 🧰 **Recovery Improvements**: Restore tooling now checks both `/lib/modules` and `/usr/lib/modules`.
-- 🎮 **MUX Backend Stability**: Backend selection is now configurable from Settings, with auto-priority favoring external tools.
-- 🔐 **Privileged MUX Commands**: MUX apply actions use interactive authentication prompts.
-- 🌈 **Wave Effect Optimization**: Wave now shifts smoothly across your selected keyboard colors.
 
 
 ## ✨ Features
