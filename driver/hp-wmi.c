@@ -2862,7 +2862,7 @@ static int hp_wmi_setup_fan_settings(struct hp_wmi_hwmon_priv *priv)
 	ret = hp_wmi_perform_query(HPWMI_VICTUS_S_GET_FAN_TABLE_QUERY, HPWMI_GM,
 				   &fan_data, 4, sizeof(fan_data));
 	if (ret) {
-		int cpu_rpm = -EINVAL, gpu_rpm = -EINVAL;
+		int cpu_rpm = -1, gpu_rpm = -1;
 
 		/*
 		 * Some Victus-S compatible boards (including boards using
