@@ -82,6 +82,7 @@ cd OmenCommandCenterforLinux
 chmod +x setup.sh
 sudo ./setup.sh install
 ```
+Legacy command compatibility: `sudo ./install.sh` also redirects to `setup.sh install`.
 Installation Warning⚠️: We recommend restart your computer after installation.
 
 ### Script Layout
