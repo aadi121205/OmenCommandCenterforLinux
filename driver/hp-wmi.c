@@ -2881,12 +2881,13 @@ static int hp_wmi_setup_fan_settings(struct hp_wmi_hwmon_priv *priv)
 		if (cpu_rpm >= 0 && gpu_rpm >= 0) {
 			pr_info("Fan table query unsupported, using fallback fan speed probing with safe limits\n");
 			priv->min_rpm             = 0;
+			/* firmware uses units of 100 RPM (50 == 5000 RPM) */
 			priv->max_rpm             = VICTUS_S_FALLBACK_MAX_RPM_FW;
 			priv->gpu_delta           = 0;
 			priv->max_rpms[0]         = VICTUS_S_FALLBACK_MAX_RPM;
 			priv->max_rpms[1]         = VICTUS_S_FALLBACK_MAX_RPM;
-			priv->target_rpms[0]      = cpu_rpm;
-			priv->target_rpms[1]      = gpu_rpm;
+			priv->target_rpms[0]      = 0;
+			priv->target_rpms[1]      = 0;
 			priv->prev_mode           = -1;
 			priv->fan_speed_available = true;
 			return 0;
