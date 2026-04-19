@@ -500,6 +500,8 @@ static const char *const tablet_chassis_types[] = {
 
 #define CPU_FAN 0
 #define GPU_FAN 1
+#define VICTUS_S_FALLBACK_MAX_RPM_FW 50
+#define VICTUS_S_FALLBACK_MAX_RPM    (VICTUS_S_FALLBACK_MAX_RPM_FW * 100)
 
 enum pwm_modes {
 	PWM_MODE_MAX    = 0,
@@ -2860,6 +2862,37 @@ static int hp_wmi_setup_fan_settings(struct hp_wmi_hwmon_priv *priv)
 	ret = hp_wmi_perform_query(HPWMI_VICTUS_S_GET_FAN_TABLE_QUERY, HPWMI_GM,
 				   &fan_data, 4, sizeof(fan_data));
 	if (ret) {
+		int cpu_rpm = -1, gpu_rpm = -1;
+
+		/*
+		 * Some Victus-S compatible boards (including boards using
+		 * omen_v1 thermal parameters) do not expose the fan-table
+		 * query, but still support Victus-S fan speed commands.
+		 *
+		 * Probe fan speed first and, when available, expose fan
+		 * controls with conservative safe limits.
+		 */
+		cpu_rpm = hp_wmi_get_fan_speed_victus_s(CPU_FAN);
+		gpu_rpm = hp_wmi_get_fan_speed_victus_s(GPU_FAN);
+		/*
+		 * Expose fallback controls only when both fan channels are
+		 * readable, matching the two-channel hwmon interface below.
+		 */
+		if (cpu_rpm >= 0 && gpu_rpm >= 0) {
+			pr_info("Fan table query unsupported, using fallback fan speed probing with safe limits\n");
+			priv->min_rpm             = 0;
+			/* firmware uses units of 100 RPM (50 == 5000 RPM) */
+			priv->max_rpm             = VICTUS_S_FALLBACK_MAX_RPM_FW;
+			priv->gpu_delta           = 0;
+			priv->max_rpms[0]         = VICTUS_S_FALLBACK_MAX_RPM;
+			priv->max_rpms[1]         = VICTUS_S_FALLBACK_MAX_RPM;
+			priv->target_rpms[0]      = 0;
+			priv->target_rpms[1]      = 0;
+			priv->prev_mode           = -1;
+			priv->fan_speed_available = true;
+			return 0;
+		}
+
 		if (!force_fan_control_support) {
 			/*
 			 * FIX: degrade gracefully instead of returning an
@@ -2879,10 +2912,11 @@ static int hp_wmi_setup_fan_settings(struct hp_wmi_hwmon_priv *priv)
 		pr_warn("Failed to get fan table (%d), falling back to 5000 RPM safe limits\n",
 			ret);
 		priv->min_rpm             = 0;
-		priv->max_rpm             = 50;  /* 5000 RPM in firmware units */
+		/* firmware uses units of 100 RPM (50 == 5000 RPM) */
+		priv->max_rpm             = VICTUS_S_FALLBACK_MAX_RPM_FW;
 		priv->gpu_delta           = 0;
-		priv->max_rpms[0]         = 5000;
-		priv->max_rpms[1]         = 5000;
+		priv->max_rpms[0]         = VICTUS_S_FALLBACK_MAX_RPM;
+		priv->max_rpms[1]         = VICTUS_S_FALLBACK_MAX_RPM;
 		priv->target_rpms[0]      = 0;
 		priv->target_rpms[1]      = 0;
 		priv->prev_mode           = -1;
