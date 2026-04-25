@@ -34,6 +34,7 @@ class FanController:
         self.found_fans = []
         self.max_speeds = {}
         self.mode = "auto"
+        self._fallback_paths = {}
         if self.hwmon_path:
             self._detect_fans()
             self._read_max_speeds()
@@ -71,11 +72,27 @@ class FanController:
         for f in os.listdir(self.hwmon_path):
             if f.startswith("fan") and f.endswith("_input"):
                 try:
-                    self.found_fans.append(int(f[3:-6]))
+                    fan_num = int(f[3:-6])
+                    self.found_fans.append(fan_num)
+                    self._fallback_paths[fan_num] = self._find_fallback_path(fan_num)
                 except ValueError:
                     continue
         self.found_fans.sort()
         self.fan_count = len(self.found_fans)
+
+    def _find_fallback_path(self, fan_num):
+        for path in glob.glob("/sys/class/hwmon/hwmon*/fan*_input"):
+            try:
+                basename = os.path.basename(path)
+                hwmon_dir = os.path.dirname(path)
+                if hwmon_dir == self.hwmon_path:
+                    continue
+                idx = basename.replace("fan", "").replace("_input", "")
+                if idx == str(fan_num):
+                    return path
+            except Exception:
+                continue
+        return None
 
     def _read_max_speeds(self):
         if not self.hwmon_path:
@@ -133,23 +150,15 @@ class FanController:
 
     def _try_fan_speed_fallback(self, fan_num):
         """Try alternative hwmon paths when the primary one returns 0 RPM."""
-        # Search other hwmon devices for fan speed data
-        for path in glob.glob("/sys/class/hwmon/hwmon*/fan*_input"):
+        path = self._fallback_paths.get(fan_num)
+        if path:
             try:
-                basename = os.path.basename(path)
-                hwmon_dir = os.path.dirname(path)
-                # Skip our own hwmon (already tried)
-                if hwmon_dir == self.hwmon_path:
-                    continue
-                # Match fan number
-                idx = basename.replace("fan", "").replace("_input", "")
-                if idx == str(fan_num):
-                    with open(path) as f:
-                        val = int(f.read().strip())
-                    if val > 0:
-                        return val
+                with open(path) as f:
+                    val = int(f.read().strip())
+                if val > 0:
+                    return val
             except Exception:
-                continue
+                pass
         return 0
 
     def get_target_speed(self, fan_num):
@@ -463,15 +472,13 @@ class MUXController:
             logger.info(f"MUX backend: {self.backend} (forced by user)")
             return
 
-        # Auto-detect priority: envycontrol > supergfxctl > prime-select > bios
+        # Auto-detect priority: envycontrol > supergfxctl > prime-select
         if "envycontrol" in available:
             self.backend = "envycontrol"
         elif "supergfxctl" in available:
             self.backend = "supergfxctl"
         elif "prime-select" in available:
             self.backend = "prime-select"
-        elif "bios" in available:
-            self.backend = "bios"
         else:
             self.backend = None
 
@@ -485,8 +492,6 @@ class MUXController:
             backends.append("supergfxctl")
         if self.prime_select:
             backends.append("prime-select")
-        if os.path.exists(_BIOS_MUX_PATH):
-            backends.append("bios")
         return backends
 
     def set_backend(self, backend):
@@ -901,7 +906,24 @@ class HPManagerService(object):
 
         self._last_nv_time: float = 0.0
         self._nv_temp_cache: float = 0.0
+        self._nv_vram_cache: float = 0.0
         self._nv_fail_cooldown: float = 0.0
+        
+        self._nv_runtime_path = None
+        for path in glob.glob("/sys/bus/pci/devices/*/vendor"):
+            try:
+                with open(path) as f:
+                    if "0x10de" in f.read():
+                        d_path = os.path.dirname(path)
+                        with open(os.path.join(d_path, "class")) as f_cls:
+                            if f_cls.read().strip().startswith("0x03"):
+                                self._nv_runtime_path = os.path.join(d_path, "power/runtime_status")
+                                break
+            except Exception:
+                pass
+                
+        self._nv_unchanged_count = 0
+        self._nv_poll_interval = 5.0
 
         self._info_cache: typing.Dict[str, typing.Any] = {}
         self._fan_cache:  typing.Dict[str, typing.Any] = {}
@@ -957,7 +979,10 @@ class HPManagerService(object):
 
             info = self._static_info.copy()
             info["cpu_temp"] = self._get_real_cpu_temp()
-            info["gpu_temp"] = self._get_real_gpu_temp()
+            gpu_stats = self._get_gpu_advanced_stats()
+            info["gpu_temp"] = gpu_stats["temp"]
+            info["gpu_vram"] = gpu_stats["vram_used"]
+            info["battery"]  = self._get_battery_info()
 
             fans_data = {
                 str(i): {
@@ -1152,32 +1177,98 @@ class HPManagerService(object):
                 pass
         return 0.0
 
-    def _get_real_gpu_temp(self):
+    def _get_gpu_advanced_stats(self):
+        stats = {"temp": 0.0, "vram_used": 0.0, "status": "Active"}
         if self._gpu_temp_path and os.path.exists(self._gpu_temp_path):
             try:
                 with open(self._gpu_temp_path) as f:
-                    return int(f.read().strip()) / 1000.0
+                    stats["temp"] = int(f.read().strip()) / 1000.0
             except Exception:
                 pass
 
         if self._has_nvidia_smi:
+            # Check runtime pm status first
+            if self._nv_runtime_path and os.path.exists(self._nv_runtime_path):
+                try:
+                    with open(self._nv_runtime_path) as f:
+                        if f.read().strip() == "suspended":
+                            return {"temp": 0.0, "vram_used": 0.0, "status": "Suspended"}
+                except Exception:
+                    pass
+
             now = time.time()
             if now < self._nv_fail_cooldown:
-                return self._nv_temp_cache
-            if now - self._last_nv_time > 5.0:
+                stats["temp"] = max(stats["temp"], self._nv_temp_cache)
+                stats["vram_used"] = self._nv_vram_cache
+                return stats
+                
+            if now - self._last_nv_time >= self._nv_poll_interval:
                 self._last_nv_time = now
                 try:
                     out = subprocess.check_output(
-                        ["nvidia-smi", "--query-gpu=temperature.gpu",
+                        ["nvidia-smi", "--query-gpu=temperature.gpu,memory.used",
                          "--format=csv,noheader,nounits"],
                         stderr=subprocess.DEVNULL, timeout=1.0
                     ).decode().strip()
-                    self._nv_temp_cache = float(out)
+                    parts = out.split(",")
+                    if len(parts) >= 2:
+                        new_temp = float(parts[0].strip())
+                        new_vram = float(parts[1].strip())
+                        
+                        if new_vram == self._nv_vram_cache:
+                            self._nv_unchanged_count += 1
+                            if self._nv_unchanged_count >= 3:
+                                self._nv_poll_interval = 10.0
+                        else:
+                            self._nv_unchanged_count = 0
+                            self._nv_poll_interval = 5.0
+                            
+                        self._nv_temp_cache = new_temp
+                        self._nv_vram_cache = new_vram
                 except Exception:
                     self._nv_fail_cooldown = now + 15.0
-            return self._nv_temp_cache
+            stats["temp"] = max(stats["temp"], self._nv_temp_cache)
+            stats["vram_used"] = self._nv_vram_cache
 
-        return 0.0
+        return stats
+
+    def _get_battery_info(self):
+        bat = {}
+        path = "/sys/class/power_supply/BAT0"
+        if not os.path.exists(path):
+            return bat
+        try:
+            with open(os.path.join(path, "status")) as f:
+                bat["status"] = f.read().strip()
+            with open(os.path.join(path, "capacity")) as f:
+                bat["capacity"] = int(f.read().strip())
+        except Exception:
+            pass
+            
+        try:
+            with open(os.path.join(path, "cycle_count")) as f:
+                bat["cycle_count"] = int(f.read().strip())
+        except Exception:
+            pass
+            
+        try:
+            with open(os.path.join(path, "charge_full")) as f:
+                cf = int(f.read().strip())
+            with open(os.path.join(path, "charge_full_design")) as f:
+                cfd = int(f.read().strip())
+            if cfd > 0:
+                bat["health"] = min(100, int((cf / cfd) * 100))
+        except Exception:
+            pass
+            
+        try:
+            # power_now is usually in microwatts
+            with open(os.path.join(path, "power_now")) as f:
+                bat["power_now"] = int(f.read().strip()) / 1000000.0  
+        except Exception:
+            pass
+            
+        return bat
 
     def CleanMemory(self):
         try:
