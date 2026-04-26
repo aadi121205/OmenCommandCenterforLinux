@@ -758,7 +758,6 @@ state: typing.Dict[str, typing.Any] = {
     "direction":     "ltr",
     "power":         True,
     "fan_mode":      "auto",
-    "power_profile": "balanced",
     "win_lock":      False,
     "prtsc_fix":     False,
     "f1_fix":        False,
@@ -834,10 +833,6 @@ def load_state():
             fm = loaded.get("fan_mode")
             if fm in ("auto", "max", "custom"):
                 state["fan_mode"] = fm
-
-            pp = loaded.get("power_profile")
-            if isinstance(pp, str) and pp in ("power-saver", "balanced", "performance"):
-                state["power_profile"] = pp
 
             if isinstance(loaded.get("prtsc_fix"), bool):
                 state["prtsc_fix"] = loaded["prtsc_fix"]
@@ -1133,10 +1128,6 @@ class HPManagerService(object):
         if profile not in power_ctrl.get_profiles():
             return "FAIL"
         ok = power_ctrl.set_profile(profile)
-        if ok:
-            with lock:
-                state["power_profile"] = profile
-            save_state()
         return "OK" if ok else "FAIL"
 
     def GetPowerProfile(self):
@@ -1401,15 +1392,6 @@ def main():
                 logger.info(f"Restored fan mode '{saved_fan}' (success={ok})")
             else:
                 logger.info(f"Fan mode already '{saved_fan}', skipping write.")
-
-    if power_ctrl.available:
-        saved_pp = state.get("power_profile", "balanced")
-        if saved_pp in power_ctrl.get_profiles():
-            if power_ctrl.get_active() != saved_pp:
-                ok = power_ctrl.set_profile(saved_pp)
-                logger.info(f"Restored power profile '{saved_pp}' (success={ok})")
-            else:
-                logger.info(f"Power profile already '{saved_pp}', skipping.")
 
     service = HPManagerService()
 

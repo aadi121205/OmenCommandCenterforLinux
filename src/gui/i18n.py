@@ -5,115 +5,9 @@ This module is imported by all pages — never run as __main__,
 so there's only one copy of active_lang in memory.
 """
 
-active_lang = "tr"
+active_lang = "en"
 
 TRANSLATIONS = {
-    "tr": {
-        # Nav
-        "fan": "Performans",
-        "lighting": "Aydınlatma", "mux": "MUX", "settings": "Ayarlar",
-        "keyboard": "Kısayollar",
-        # Fan page
-        "fan_control": "Fan Kontrolü", "system_status": "SİSTEM DURUMU",
-        "power_profile": "GÜÇ PROFİLİ", "fan_mode": "FAN MODU",
-        "fan_curve": "FAN EĞRİSİ", "all_sensors": "Tüm Sensörler",
-        "fan_disabled": "Fan kontrolü devre dışı",
-        "checking": "Kontrol ediliyor...", "no_ppd": "PPD yok",
-        "active_profile": "Aktif profil", "mode": "Mod",
-        "saver": "Tasarruf", "balanced": "Dengeli", "performance": "Performans",
-        "auto": "Otomatik", "max": "Maksimum", "custom": "Özel", "standard": "Standart",
-        "curve_desc": "Noktaları sürükleyerek fan eğrisini özelleştirin. X: Sıcaklık (°C), Y: Fan Hızı (%)",
-        "no_sensor": "Sensör verisi bulunamadı",
-        # Lighting page
-        "keyboard_lighting": "Klavye Aydınlatma", "keyboard_light": "KLAVYE IŞIĞI",
-        "zone": "Bölge", "all_zones": "Tümü",
-        "effect": "EFEKT", "direction": "YÖN", "speed": "HIZ", "brightness": "PARLAKLIK",
-        "static_eff": "Sabit", "breathing": "Nefes Alma", "wave": "Dalga", "cycle": "Renk Döngüsü",
-        "ltr": "Sol → Sağ", "rtl": "Sağ → Sol",
-        "win_lock": "Oyun Tuş Kilidi",
-        # Keyboard page
-        "keyboard_shortcuts": "Kısayollar", "special_keys": "ÖZEL TUŞLAR",
-        "omen_key": "Omen Tuşu", "victus_key": "Omen Tuşu",
-        "calc_key": "Hesap Makinesi", "prt_sc_fix": "Print Screen (PrtSc) Düzelt",
-        "prt_sc_desc": "PrtSc tuşunun ekran alıntısı aracı yerine gerçek 'Print Screen' olarak çalışmasını sağlar (Büyük kolaylık!).",
-        "f1_fix": "F1 (Sunum) Tuşunu Düzelt",
-        "f1_desc": "F1 tuşunun Super+P (Sunum modu) yerine standart F1 olarak çalışmasını sağlar.",
-        "apply_shortcuts": "Değişiklikleri Uygula",
-        "shortcuts_desc": "Laptopunuzdaki bazı tuşların davranışlarını buradan kalıcı olarak değiştirebilirsiniz.",
-        "hwdb_applied": "Klavye düzeltmeleri başarıyla uygulandı.",
-        # MUX page
-        "mux_switch": "MUX Anahtarlayıcı", "gpu_info": "GPU BİLGİSİ",
-        "gpu_card": "Ekran Kartı", "driver_ver": "Sürücü Sürümü",
-        "gpu_mode": "GPU MODU", "hybrid": "Hibrit", "discrete": "Harici GPU",
-        "integrated": "Dahili GPU",
-        "hybrid_desc": "NVIDIA Optimus (Hibrit)", "discrete_desc": "NVIDIA GeForce RTX",
-        "integrated_desc": "Intel Iris Xe / AMD Radeon Graphics",
-        "gpu_checking": "GPU modu kontrol ediliyor...",
-        "restart_warn": "GPU modunu değiştirmek için sistem yeniden başlatılmalıdır.",
-        "mux_not_found": "MUX aracı bulunamadı",
-        "mux_install_hint": "envycontrol, supergfxctl veya prime-select yüklü olmalıdır.",
-        "restart": "Yeniden Başlat",
-        "restart_confirm": "GPU modunu '{mode}' olarak değiştirmek için sistem yeniden başlatılacak. Devam edilsin mi?",
-        "mode_set": "Mod '{mode}' olarak ayarlandı. Yeniden başlatılıyor...",
-        "mux_backend_label": "MUX Aracı (Backend)", "mux_auto": "Otomatik Algıla",
-        # Settings page
-        "appearance": "GÖRÜNÜM", "theme": "Tema", "lang_label": "Dil / Language",
-        "dark": "Koyu", "light": "Açık", "system": "Sistem Uyarlanır",
-        "updates": "GÜNCELLEMELER", "current_ver": "Mevcut sürüm",
-        # Dashboard
-        "dashboard": "Gösterge Paneli", "quick_status": "Hızlı Durum",
-        "hardware_profile": "Donanım Profili", "resources": "Kaynak Kullanımı",
-        "quick_actions": "Hızlı Aksiyonlar", "clean_memory": "Belleği Temizle",
-        "max_fan": "Turbo Fan", "eco_mode": "Eko Modu",
-        "go_performance": "Performans sekmesine git",
-        "fan_metric": "Fan",
-        "disk": "Disk", "ram": "RAM",
-        "cpu_load_30s": "CPU Yükü (Son 30 sn)",
-        "power_profile_label": "Güç Profili", "fan_mode_label": "Fan Modu",
-        "gpu_mux_label": "GPU / MUX",
-        "battery": "Batarya", "ac_power": "Güç Kablosu",
-        "health": "Sağlık",
-        "power_saver_lbl": "Enerji Tasarrufu",
-        "balanced_lbl": "Dengeli", "performance_lbl": "Performans",
-        "check_update": "Güncelleme Kontrol Et", "download": "İndir",
-        "sys_info": "SİSTEM BİLGİSİ",
-        "computer": "Bilgisayar", "kernel": "Çekirdek",
-        "os_name": "İşletim Sistemi", "arch": "Mimari",
-        "driver_status": "SÜRÜCÜ DURUMU",
-        "loaded": "✓ Yüklü", "not_loaded": "✗ Yüklü Değil",
-        "developer": "Geliştirici",
-        "home_subtitle": "Modül seçerek devam edin",
-        "debug_info_title": "Tanılama ve Hata Ayıklama",
-        "show_debug_info": "Hata Ayıklama Bilgilerini Göster",
-        "copy_debug_log": "Tanı Bilgilerini Kopyala",
-        "copied_to_clipboard": "Panoya kopyalandı",
-        "debug_console_title": "Sistem Tanı Konsolu",
-        "debug_collecting": "Sistem bilgileri toplanıyor...\nWMI bağlantısı kuruluyor...\nDMI tabloları okunuyor...\nKernel logları analiz ediliyor...\n\nLütfen bekleyin...",
-        "disclaimer": "Bu aracın <b>Hewlett Packard</b> ile resmi bir bağlantısı bulunmamaktadır.",
-        "update_checking": "Kontrol ediliyor...",
-        "new_ver_available": "Yeni sürüm mevcut",
-        "up_to_date": "Güncel", "conn_failed": "Bağlantı sağlanamadı",
-        "error": "Hata",
-        "install_update": "Güncellemeyi Kur",
-        "downloading_update": "İndiriliyor...",
-        "installing_update": "Kuruluyor...",
-        "update_success": "Güncelleme başarıyla kuruldu! Uygulamayı yeniden başlatın.",
-        "update_failed": "Güncelleme başarısız",
-        "restart_app": "Uygulamayı Yeniden Başlat",
-
-        # Temperature unit
-        "temp_unit": "Sıcaklık Birimi", "celsius": "Celsius (°C)", "fahrenheit": "Fahrenheit (°F)",
-        # Fan curve widget
-        "temp_axis": "Sıcaklık (°C)", "fan_speed_axis": "Fan Hızı (%)",
-        # Sensor categories
-        "other_sensors": "Diğer",
-        # Profile tooltips
-        "saver_tooltip": "Maksimum pil ömrü için enerji tasarrufu sağlar. (Düşük Güç Limitleri)",
-        "balanced_tooltip": "Güç ve tasarruf arasında denge kurar. (Optimize Güç Limitleri)",
-        "performance_tooltip": "Tüm limitleri kaldırır ve en yüksek performansı almanızı sağlar.",
-        "power_managed_by": "Güç modu {tool} tarafından yönetilmektedir.",
-
-    },
     "en": {
         # Nav
         "fan": "Performance",
@@ -223,23 +117,15 @@ TRANSLATIONS = {
 
 
 def T(key):
-    """Get translation for key using current active_lang."""
-    return TRANSLATIONS.get(active_lang, TRANSLATIONS["tr"]).get(key, key)
+    """Get translation for key."""
+    return TRANSLATIONS["en"].get(key, key)
 
 
 def set_lang(lang):
-    """Set the active language globally."""
-    global active_lang
-    normalized = str(lang or "").strip().lower()
-    if normalized.startswith("tr") or "türk" in normalized or "turk" in normalized:
-        active_lang = "tr"
-        return
-    if normalized.startswith("en") or "english" in normalized:
-        active_lang = "en"
-        return
-    active_lang = normalized if normalized in TRANSLATIONS else "tr"
+    """No-op: language is fixed to English."""
+    pass
 
 
 def get_lang():
     """Get the current active language."""
-    return active_lang
+    return "en"

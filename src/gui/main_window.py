@@ -48,12 +48,7 @@ else:
 sys.path.insert(0, BASE_DIR)
 sys.path.insert(0, os.path.dirname(BASE_DIR))
 
-from pages.fan_page import FanPage
 from pages.lighting_page import LightingPage
-from pages.mux_page import MUXPage
-from pages.settings_page import SettingsPage
-from pages.dashboard_page import DashboardPage
-from pages.keyboard_page import KeyboardPage
 
 APP_VERSION = "1.3.0"
 CONFIG_FILE      = os.path.expanduser("~/.config/hp-manager.toml")
@@ -291,12 +286,7 @@ class HPManagerWindow(Gtk.ApplicationWindow):
         self._scroll_adjustment = None
         self._scroll_adjustment_handler = 0
         self.page_titles = {
-            "dashboard": T("dashboard"),
-            "fan": T("fan"),
             "lighting": T("lighting"),
-            "keyboard": T("keyboard"),
-            "mux": "MUX",
-            "settings": T("settings"),
         }
 
         self._load_config()
@@ -310,8 +300,7 @@ class HPManagerWindow(Gtk.ApplicationWindow):
 
     @staticmethod
     def _home_title():
-        lang = str(get_lang() or "").lower()
-        return "Kontrol Merkezi" if lang.startswith("tr") else "Control Center"
+        return "Control Center"
 
     @staticmethod
     def _home_subtitle():
@@ -427,13 +416,11 @@ class HPManagerWindow(Gtk.ApplicationWindow):
                     data = tomllib.load(f)
                 self.app_theme = data.get("theme", "dark")
                 self.temp_unit = data.get("temp_unit", "C")
-                set_lang(data.get("lang", "tr"))
             elif os.path.exists(CONFIG_FILE_JSON):
                 with open(CONFIG_FILE_JSON) as f:
                     data = json.load(f)
                 self.app_theme = data.get("theme", "dark")
                 self.temp_unit = data.get("temp_unit", "C")
-                set_lang(data.get("lang", "tr"))
                 self._save_config()
             # If only a TOML file exists but tomllib is unavailable, skip silently.
         except Exception:
@@ -448,16 +435,13 @@ class HPManagerWindow(Gtk.ApplicationWindow):
         try:
             os.makedirs(os.path.dirname(CONFIG_FILE), exist_ok=True)
             theme     = self._toml_escape(self.app_theme)
-            lang      = self._toml_escape(get_lang())
             temp_unit = self._toml_escape(self.temp_unit)
             with open(CONFIG_FILE, "w") as f:
                 f.write(f'theme = "{theme}"\n')
-                f.write(f'lang = "{lang}"\n')
                 f.write(f'temp_unit = "{temp_unit}"\n')
             # JSON fallback for systems without tomllib
             with open(CONFIG_FILE_JSON, "w") as f:
-                json.dump({"theme": self.app_theme, "lang": get_lang(),
-                           "temp_unit": self.temp_unit}, f)
+                json.dump({"theme": self.app_theme, "temp_unit": self.temp_unit}, f)
         except Exception:
             pass
 
@@ -1873,7 +1857,7 @@ class HPManagerWindow(Gtk.ApplicationWindow):
         self.menu_back_btn = Gtk.Button()
         self.menu_back_btn.add_css_class("menu-back-btn")
         self.menu_back_btn.set_child(self._build_menu_back_content())
-        self.menu_back_btn.set_tooltip_text("Ana Menü" if get_lang() == "tr" else "Main Menu")
+        self.menu_back_btn.set_tooltip_text("Main Menu")
         self.menu_back_btn.connect("clicked", lambda *_: self._navigate("home"))
         self.menu_back_btn.set_sensitive(False)
         self.menu_back_btn.set_opacity(0.35)
@@ -1959,7 +1943,7 @@ class HPManagerWindow(Gtk.ApplicationWindow):
         self.menu_back_btn = Gtk.Button()
         self.menu_back_btn.add_css_class("menu-back-btn")
         self.menu_back_btn.set_child(self._build_menu_back_content())
-        self.menu_back_btn.set_tooltip_text("Ana Menü" if get_lang() == "tr" else "Main Menu")
+        self.menu_back_btn.set_tooltip_text("Main Menu")
         self.menu_back_btn.connect("clicked", lambda *_: self._navigate("home"))
         self.menu_back_btn.set_sensitive(False)
         self.menu_back_btn.set_opacity(0.35)
@@ -1983,36 +1967,10 @@ class HPManagerWindow(Gtk.ApplicationWindow):
         self.home_page = self._build_home_page()
 
         # Pages
-        self.dashboard_page = DashboardPage(service=self.service, on_navigate=self._navigate)
-        self.fan_page        = FanPage(service=self.service, on_profile_change=self._on_profile_mode_changed)
-        self.lighting_page   = LightingPage(service=self.service)
-        self.keyboard_page   = KeyboardPage(service=self.service)
-        self.mux_page        = MUXPage(service=self.service)
-        self.settings_page   = SettingsPage(
-            on_theme_change=self._on_theme_change,
-            on_lang_change=self._on_lang_change,
-            on_temp_unit_change=self._on_temp_unit_change,
-            service=self.service,
-        )
+        self.lighting_page = LightingPage(service=self.service)
 
         self.stack.add_named(self.home_page, "home")
-        self.stack.add_named(self.dashboard_page, "dashboard")
-        self.stack.add_named(self.fan_page,        "fan")
-        self.stack.add_named(self.lighting_page,   "lighting")
-        self.stack.add_named(self.keyboard_page,   "keyboard")
-        self.stack.add_named(self.mux_page,        "mux")
-        self.stack.add_named(self.settings_page,   "settings")
-
-        self.fan_page.set_dark(self.app_theme == "dark")
-        self.fan_page.set_temp_unit(self.temp_unit)
-        self.dashboard_page.set_temp_unit(self.temp_unit)
-
-        self._rebuilding = True
-        self.settings_page.set_theme_index(
-            0 if self.app_theme == "dark" else 1 if self.app_theme == "light" else 2)
-        self.settings_page.set_lang_index(0 if get_lang() == "tr" else 1)
-        self.settings_page.set_temp_unit_index(0 if self.temp_unit == "C" else 1)
-        self._rebuilding = False
+        self.stack.add_named(self.lighting_page, "lighting")
 
         self._navigate("home")
         self._set_performance_mode("balanced")
@@ -2058,7 +2016,7 @@ class HPManagerWindow(Gtk.ApplicationWindow):
         hw = self._get_home_hardware_info()
         labels = {
             "cpu": "CPU",
-            "disk": "Disk" if get_lang() == "en" else "Disk",
+            "disk": "Disk",
             "gpu": "GPU",
             "ram": "RAM",
         }
@@ -2111,31 +2069,12 @@ class HPManagerWindow(Gtk.ApplicationWindow):
         root.append(flow)
         self._home_flow = flow
 
-        labels_tr = {
-            "dashboard": "Sistem özeti ve canlı sensörler",
-            "fan": "Fan, güç ve termal profiller",
-            "lighting": "Aydınlatma efektleri ve parlaklık",
-            "keyboard": "Özel tuşlar ve kısayollar",
-            "mux": "GPU geçiş modu ve sürücü",
-            "settings": "Tema, dil ve uygulama ayarları",
-        }
-        labels_en = {
-            "dashboard": "System overview and live sensors",
-            "fan": "Fan, power and thermal profiles",
+        desc = {
             "lighting": "Lighting effects and brightness",
-            "keyboard": "Special keys and shortcuts",
-            "mux": "GPU switching mode and driver",
-            "settings": "Theme, language and app settings",
         }
-        desc = labels_tr if str(get_lang() or "").lower().startswith("tr") else labels_en
 
         cards = [
-            ("dashboard", self.page_titles["dashboard"], "dashboard"),
-            ("fan", self.page_titles["fan"], "fan"),
             ("lighting", self.page_titles["lighting"], "lighting"),
-            ("keyboard", self.page_titles["keyboard"], "keyboard"),
-            ("mux", "MUX", "mux"),
-            ("settings", self.page_titles["settings"], "settings"),
         ]
 
         for page_id, title_text, icon_name in cards:
@@ -2214,7 +2153,7 @@ class HPManagerWindow(Gtk.ApplicationWindow):
             target.add_css_class(target_cls)
 
         self._apply_home_scale(bucket)
-        for page_attr in ("dashboard_page", "fan_page", "lighting_page", "keyboard_page", "mux_page", "settings_page"):
+        for page_attr in ("lighting_page",):
             page = getattr(self, page_attr, None)
             if page and hasattr(page, "set_ui_scale"):
                 try:
@@ -2597,13 +2536,7 @@ class HPManagerWindow(Gtk.ApplicationWindow):
             bus = SystemBus()
             self.service = bus.get("com.yyl.hpmanager")
             self.ready   = True
-            self.dashboard_page.set_service(self.service)
-            self.fan_page.set_service(self.service)
             self.lighting_page.set_service(self.service)
-            if hasattr(self, 'keyboard_page'):
-                self.keyboard_page.service = self.service
-            self.mux_page.set_service(self.service)
-            self.settings_page.set_service(self.service)
             print("Daemon connected")
             self._refresh_launcher_metrics()
         except Exception as e:
@@ -2651,40 +2584,11 @@ class HPManagerWindow(Gtk.ApplicationWindow):
         self._refresh_launcher_icon_colors()
         if hasattr(self, "menu_back_btn"):
             self.menu_back_btn.set_child(self._build_menu_back_content())
-        if hasattr(self, 'fan_page'):
-            self.fan_page.set_dark(theme == "dark")
         self._update_logo()
         self._refresh_launcher_metrics()
 
     def _on_lang_change(self, lang):
-        if self._rebuilding:
-            return
-        if get_lang() == lang:
-            return
-        set_lang(lang)
-        self._save_config()
-        self.page_titles = {
-            "dashboard": T("dashboard"),
-            "fan": T("fan"),
-            "lighting": T("lighting"),
-            "keyboard": T("keyboard"),
-            "mux": "MUX",
-            "settings": T("settings"),
-        }
-        for pid, lbl in self.nav_labels.items():
-            if pid in self.page_titles:
-                lbl.set_label(self.page_titles[pid])
-        if hasattr(self, "inline_page_title"):
-            current = self.stack.get_visible_child_name() if hasattr(self, "stack") else "home"
-            if current == "home":
-                self.inline_page_title.set_label("")
-            else:
-                self.inline_page_title.set_label(self.page_titles.get(current, current.title()))
-        if hasattr(self, "menu_back_btn"):
-            self.menu_back_btn.set_child(self._build_menu_back_content())
-            self.menu_back_btn.set_tooltip_text("Ana Menü" if get_lang() == "tr" else "Main Menu")
-        # Defer page rebuild — cannot destroy widgets inside a signal handler
-        GLib.idle_add(self._rebuild_pages)
+        pass  # Language is fixed to English
 
     def _start_launcher_metrics(self):
         if self._launcher_timer_id is not None:
@@ -2875,12 +2779,12 @@ class HPManagerWindow(Gtk.ApplicationWindow):
                     if badge is not None:
                         badge.add_css_class("launcher-status-badge-critical")
                     self._set_launcher_badge(pid, True)
-                    refs["metric_main"].set_label("Daemon Kapalı" if get_lang() == "tr" else "Daemon Offline")
-                    refs["metric_sub"].set_label("Ayarlar" if get_lang() == "tr" else "Settings")
+                    refs["metric_main"].set_label("Daemon Offline")
+                    refs["metric_sub"].set_label("Settings")
                 else:
                     self._set_launcher_dimmed(pid, True)
                     self._set_launcher_badge(pid, False)
-                    refs["metric_main"].set_label("Beklemede" if get_lang() == "tr" else "Standby")
+                    refs["metric_main"].set_label("Standby")
                     refs["metric_sub"].set_label("-")
             return False
 
@@ -2889,46 +2793,6 @@ class HPManagerWindow(Gtk.ApplicationWindow):
             badge = refs.get("status_badge")
             if badge is not None:
                 badge.remove_css_class("launcher-status-badge-critical")
-
-        dash = self._launcher_cards.get("dashboard")
-        if dash:
-            ct = int(sysi.get("cpu_temp", 0) or 0)
-            gt = int(sysi.get("gpu_temp", 0) or 0)
-            cp = int(cpu_pct) if cpu_pct is not None else 0
-            gp = int(gpu_pct) if gpu_pct is not None else 0
-            dash["metric_main"].set_label(f"CPU {ct}°C • {cp}%")
-            dash["metric_sub"].set_label(f"GPU {gt}°C • {gp}%")
-            self._set_temp_tone(dash["metric_main"], ct)
-            self._set_temp_tone(dash["metric_sub"], gt)
-            if dash.get("cpu_bar") is not None:
-                dash["cpu_bar"].set_value(max(0, min(100, cp)))
-            if dash.get("gpu_bar") is not None:
-                dash["gpu_bar"].set_value(max(0, min(100, gp)))
-            self._set_launcher_badge("dashboard", (not ok) or (ct <= 0 and gt <= 0))
-
-        perf = self._launcher_cards.get("fan")
-        if perf:
-            active = str(ppi.get("active", "balanced"))
-            self._set_performance_mode(active)
-            profile_map = {
-                "power-saver": "Sessiz" if get_lang() == "tr" else "Quiet",
-                "balanced": "Dengeli" if get_lang() == "tr" else "Balanced",
-                "performance": "Performans" if get_lang() == "tr" else "Performance",
-            }
-            profile = profile_map.get(active, active.capitalize())
-            fans = fani.get("fans", {}) if isinstance(fani, dict) else {}
-            rpms = []
-            for fid in sorted(fans.keys()):
-                try:
-                    cur = int(fans[fid].get("current", 0))
-                except Exception:
-                    cur = 0
-                if cur > 0:
-                    rpms.append(str(cur))
-            rpm_str = "/".join(rpms) if rpms else "0"
-            perf["metric_main"].set_label(profile)
-            perf["metric_sub"].set_label(f"{rpm_str} RPM")
-            self._set_launcher_badge("fan", (not ok) or (not bool(fani)))
 
         light = self._launcher_cards.get("lighting")
         if light:
@@ -2947,41 +2811,6 @@ class HPManagerWindow(Gtk.ApplicationWindow):
             lighting_module_ok = os.path.exists("/sys/module/hp_rgb_lighting")
             self._set_launcher_badge("lighting", (not ok) or (not lighting_module_ok) or (not bool(ligi)))
 
-        mux = self._launcher_cards.get("mux")
-        if mux:
-            mode = str(gpui.get("mode", "unknown"))
-            mode_map = {
-                "integrated": "iGPU",
-                "intel": "iGPU",
-                "discrete": "dGPU",
-                "nvidia": "dGPU",
-                "dedicated": "dGPU",
-                "hybrid": "Hybrid",
-                "on-demand": "Hybrid",
-            }
-            mode_text = mode_map.get(mode, "N/A")
-            mux["metric_main"].set_label(mode_text)
-            mux["metric_sub"].set_label("")
-            if mux.get("mode_badge") is not None:
-                mux["mode_badge"].set_label(mode_text)
-                if mode_text == "N/A" or mode.lower() == "unknown":
-                    mux["mode_badge"].add_css_class("launcher-mode-badge-muted")
-                else:
-                    mux["mode_badge"].remove_css_class("launcher-mode-badge-muted")
-            self._set_launcher_badge("mux", (not ok) or (mode_text == "N/A"))
-
-        keyboard = self._launcher_cards.get("keyboard")
-        if keyboard:
-            keyboard["metric_main"].set_label("0 Aktif" if get_lang() == "tr" else "0 Active")
-            keyboard["metric_sub"].set_label("Varsayılan" if get_lang() == "tr" else "Default")
-            self._set_launcher_badge("keyboard", False)
-
-        settings = self._launcher_cards.get("settings")
-        if settings:
-            settings["metric_main"].set_label("OK" if ok else "Offline")
-            settings["metric_sub"].set_label("Daemon")
-            self._set_launcher_badge("settings", not ok)
-
         return False
 
     def _on_temp_unit_change(self, unit):
@@ -2989,64 +2818,28 @@ class HPManagerWindow(Gtk.ApplicationWindow):
             return
         self.temp_unit = unit
         self._save_config()
-        if hasattr(self, 'fan_page'):
-            self.fan_page.set_temp_unit(unit)
-        if hasattr(self, 'dashboard_page'):
-            self.dashboard_page.set_temp_unit(unit)
 
     # ── Page rebuild (language change) ────────────────────────────────────────
 
     def _rebuild_pages(self):
-        """Destroy and recreate all pages so T() picks up the new language."""
+        """Destroy and recreate pages."""
         self._rebuilding = True
         try:
             current_page = self.stack.get_visible_child_name()
 
-            for attr in ('dashboard_page', 'fan_page', 'lighting_page'):
-                page = getattr(self, attr, None)
-                if page and hasattr(page, 'cleanup'):
-                    page.cleanup()
+            if hasattr(self, 'lighting_page') and self.lighting_page and hasattr(self.lighting_page, 'cleanup'):
+                self.lighting_page.cleanup()
 
-            for name in ("home", "dashboard", "fan", "lighting", "keyboard", "mux", "settings"):
+            for name in ("home", "lighting"):
                 child = self.stack.get_child_by_name(name)
                 if child:
                     self.stack.remove(child)
 
             self.home_page = self._build_home_page()
-            self.dashboard_page = DashboardPage(service=self.service, on_navigate=self._navigate)
-            self.fan_page        = FanPage(service=self.service, on_profile_change=self._on_profile_mode_changed)
-            self.lighting_page   = LightingPage(service=self.service)
-            self.keyboard_page   = KeyboardPage(service=self.service)
-            self.mux_page        = MUXPage(service=self.service)
-            self.settings_page   = SettingsPage(
-                on_theme_change=self._on_theme_change,
-                on_lang_change=self._on_lang_change,
-                on_temp_unit_change=self._on_temp_unit_change,
-                service=self.service,
-            )
+            self.lighting_page = LightingPage(service=self.service)
 
             self.stack.add_named(self.home_page, "home")
-            self.stack.add_named(self.dashboard_page, "dashboard")
-            self.stack.add_named(self.fan_page,        "fan")
-            self.stack.add_named(self.lighting_page,   "lighting")
-            self.stack.add_named(self.keyboard_page,   "keyboard")
-            self.stack.add_named(self.mux_page,        "mux")
-            self.stack.add_named(self.settings_page,   "settings")
-
-            self.fan_page.set_dark(self.app_theme == "dark")
-            self.fan_page.set_temp_unit(self.temp_unit)
-            self.dashboard_page.set_temp_unit(self.temp_unit)
-            if self.performance_mode == "eco":
-                self._set_performance_mode("power-saver")
-            elif self.performance_mode == "performance":
-                self._set_performance_mode("performance")
-            else:
-                self._set_performance_mode("balanced")
-
-            self.settings_page.set_theme_index(
-                0 if self.app_theme == "dark" else 1 if self.app_theme == "light" else 2)
-            self.settings_page.set_lang_index(0 if get_lang() == "tr" else 1)
-            self.settings_page.set_temp_unit_index(0 if self.temp_unit == "C" else 1)
+            self.stack.add_named(self.lighting_page, "lighting")
 
             self._navigate(current_page or "home")
             self._apply_ui_scale_from_current_size()
@@ -3072,7 +2865,7 @@ class HPManagerWindow(Gtk.ApplicationWindow):
             except Exception:
                 pass
             self._launcher_timer_id = None
-        for attr in ('dashboard_page', 'lighting_page', 'fan_page'):
+        for attr in ('lighting_page',):
             page = getattr(self, attr, None)
             if page and hasattr(page, 'cleanup'):
                 try:
