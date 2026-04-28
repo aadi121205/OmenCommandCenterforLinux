@@ -690,7 +690,7 @@ class DashboardPage(Gtk.Box):
         if svc is None:
             try:
                 from pydbus import SystemBus
-                svc = SystemBus().get("com.yyl.hpmanager")
+                svc = SystemBus().get("com.aadi.hpmanager")
                 self.service = svc
             except Exception:
                 svc = None

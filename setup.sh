@@ -134,6 +134,16 @@ install_dependencies() {
 # --- DRIVER MANAGEMENT ---
 manage_driver() {
     local action=$1
+
+    if [ "$action" = "install" ]; then
+        echo -e "${YELLOW}[?] Do you have the lighting DKMS driver installed already?${NC}"
+        read -r -p "    Skip driver installation? (y/N): " skip_driver
+        if [[ "$skip_driver" =~ ^[Yy]$ ]]; then
+            info "Skipping DKMS driver installation as requested."
+            return 0
+        fi
+    fi
+
     if [ -d "driver" ] && [ -f "driver/setup.sh" ]; then
         info "Running driver ${action}..."
         if ! (cd driver && chmod +x setup.sh && ./setup.sh "$action"); then
@@ -399,10 +409,10 @@ LAUNCHER
     mkdir -p /usr/share/polkit-1/actions
     mkdir -p /usr/share/applications
 
-    cp data/com.yyl.hpmanager.conf    /etc/dbus-1/system.d/
-    cp data/com.yyl.hpmanager.service /etc/systemd/system/com.yyl.hpmanager.service
-    cp data/com.yyl.hpmanager.policy  /usr/share/polkit-1/actions/
-    cp data/com.yyl.hpmanager.desktop /usr/share/applications/
+    cp data/com.aadi.hpmanager.conf    /etc/dbus-1/system.d/
+    cp data/com.aadi.hpmanager.service /etc/systemd/system/com.aadi.hpmanager.service
+    cp data/com.aadi.hpmanager.policy  /usr/share/polkit-1/actions/
+    cp data/com.aadi.hpmanager.desktop /usr/share/applications/
 
     # Ensure drivers load on boot via modules-load.d
     echo "hp-rgb-lighting" > /etc/modules-load.d/hp-rgb-lighting.conf
@@ -425,19 +435,19 @@ BIN_LINK="/usr/bin/hp-manager"
 UNINSTALLER_LINK="/usr/bin/hp-manager-uninstall"
 
 echo "Stopping and disabling services..."
-systemctl stop    hp-manager.service com.yyl.hpmanager.service 2>/dev/null || true
-systemctl disable hp-manager.service com.yyl.hpmanager.service 2>/dev/null || true
+systemctl stop    hp-manager.service com.aadi.hpmanager.service 2>/dev/null || true
+systemctl disable hp-manager.service com.aadi.hpmanager.service 2>/dev/null || true
 
 echo "Removing files..."
 rm -f /etc/systemd/system/hp-manager.service
-rm -f /etc/systemd/system/com.yyl.hpmanager.service
+rm -f /etc/systemd/system/com.aadi.hpmanager.service
 rm -f "$BIN_LINK"
 rm -rf "$INSTALL_DIR"
 rm -rf "$DATA_DIR"
 rm -rf "/var/lib/hp-manager"
-rm -f /etc/dbus-1/system.d/com.yyl.hpmanager.conf
-rm -f /usr/share/polkit-1/actions/com.yyl.hpmanager.policy
-rm -f /usr/share/applications/com.yyl.hpmanager.desktop
+rm -f /etc/dbus-1/system.d/com.aadi.hpmanager.conf
+rm -f /usr/share/polkit-1/actions/com.aadi.hpmanager.policy
+rm -f /usr/share/applications/com.aadi.hpmanager.desktop
 rm -f /usr/share/icons/hicolor/48x48/apps/omenapplogo.png
 rm -f /etc/modules-load.d/hp-rgb-lighting.conf
 rm -f /etc/modules-load.d/hp-wmi.conf
@@ -451,8 +461,8 @@ UNINSTALLER
     chmod +x "$UNINSTALLER_LINK"
 
     systemctl daemon-reload
-    systemctl enable  com.yyl.hpmanager.service
-    systemctl restart com.yyl.hpmanager.service || warn "Daemon failed to start — check: journalctl -u com.yyl.hpmanager.service"
+    systemctl enable  com.aadi.hpmanager.service
+    systemctl restart com.aadi.hpmanager.service || warn "Daemon failed to start — check: journalctl -u com.aadi.hpmanager.service"
 
     # Omen Key shortcut
     setup_omen_key_shortcut
@@ -465,21 +475,21 @@ do_uninstall() {
     check_root
     info "$(msg uninstalling)"
 
-    systemctl stop    hp-manager.service com.yyl.hpmanager.service 2>/dev/null || true
-    systemctl disable hp-manager.service com.yyl.hpmanager.service 2>/dev/null || true
+    systemctl stop    hp-manager.service com.aadi.hpmanager.service 2>/dev/null || true
+    systemctl disable hp-manager.service com.aadi.hpmanager.service 2>/dev/null || true
 
     manage_driver "uninstall"
 
     rm -f /etc/systemd/system/hp-manager.service
-    rm -f /etc/systemd/system/com.yyl.hpmanager.service
+    rm -f /etc/systemd/system/com.aadi.hpmanager.service
     rm -f "$BIN_LINK"
     rm -f "$UNINSTALLER_LINK"
     rm -rf "$INSTALL_DIR"
     rm -rf "$DATA_DIR"
     rm -rf "/var/lib/hp-manager"
-    rm -f /etc/dbus-1/system.d/com.yyl.hpmanager.conf
-    rm -f /usr/share/polkit-1/actions/com.yyl.hpmanager.policy
-    rm -f /usr/share/applications/com.yyl.hpmanager.desktop
+    rm -f /etc/dbus-1/system.d/com.aadi.hpmanager.conf
+    rm -f /usr/share/polkit-1/actions/com.aadi.hpmanager.policy
+    rm -f /usr/share/applications/com.aadi.hpmanager.desktop
     rm -f /usr/share/icons/hicolor/48x48/apps/omenapplogo.png
     rm -f /etc/modules-load.d/hp-rgb-lighting.conf
     rm -f /etc/modules-load.d/hp-wmi.conf

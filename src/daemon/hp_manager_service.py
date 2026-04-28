@@ -481,7 +481,7 @@ def load_state():
 class HPManagerService(object):
     """
     <node>
-      <interface name="com.yyl.hpmanager">
+      <interface name="com.aadi.hpmanager">
         <method name="SetColor"><arg type="i" name="z" direction="in"/><arg type="s" name="h" direction="in"/><arg type="s" name="resp" direction="out"/></method>
         <method name="SetMode"><arg type="s" name="m" direction="in"/><arg type="i" name="s" direction="in"/><arg type="s" name="resp" direction="out"/></method>
         <method name="SetGlobal"><arg type="b" name="p" direction="in"/><arg type="i" name="b" direction="in"/><arg type="s" name="d" direction="in"/><arg type="s" name="resp" direction="out"/></method>
@@ -561,7 +561,7 @@ def main():
 
     try:
         bus = SystemBus()
-        bus.publish("com.yyl.hpmanager", service)
+        bus.publish("com.aadi.hpmanager", service)
         logger.info("HP RGB Control Daemon ready on D-Bus")
         GLib.MainLoop().run()
     except Exception as e:

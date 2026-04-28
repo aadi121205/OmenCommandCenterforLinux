@@ -312,7 +312,7 @@ DKMSRGB
         # Enrol MOK if not yet enrolled
         if mokutil --test-key "$MOK_DIR/MOK.der" 2>/dev/null | grep -qi "not enrolled"; then
             info "Enrolling MOK key..."
-            printf "yunusemreyl\nyunusemreyl\n" | mokutil --import "$MOK_DIR/MOK.der" 2>/dev/null \
+            printf "aadi\naadi\n" | mokutil --import "$MOK_DIR/MOK.der" 2>/dev/null \
                 || warn "Failed to import MOK key."
 
             echo ""
@@ -329,7 +329,7 @@ DKMSRGB
             echo -e "${YELLOW}║  1. Select 'Enroll MOK'                                   ║${NC}"
             echo -e "${YELLOW}║  2. Select 'Continue'                                     ║${NC}"
             echo -e "${YELLOW}║  3. Select 'Yes'                                          ║${NC}"
-            echo -e "${YELLOW}║  4. Enter password: ${GREEN}yunusemreyl${YELLOW}                           ║${NC}"
+            echo -e "${YELLOW}║  4. Enter password: ${GREEN}aadi${YELLOW}                           ║${NC}"
             echo -e "${YELLOW}║  5. Select 'Reboot'                                       ║${NC}"
             echo -e "${YELLOW}╚═══════════════════════════════════════════════════════════╝${NC}"
             echo ""

@@ -1,4 +1,4 @@
-# Maintainer: Yunus Emre YILMAZ <yunusemreyl>
+# Maintainer: Aaditya Bhatia <aadi>
 # Co-Maintainer: ja4e
 
 pkgname=hp-laptop-manager-git
@@ -7,13 +7,13 @@ pkgver=1.3.0
 pkgrel=1
 pkgdesc="Advanced HP Omen/Victus laptop manager for Linux with RGB, Fan, and MUX control"
 arch=('x86_64')
-url="https://github.com/yunusemreyl/OmenCommandCenterforLinux"
+url="https://github.com/aadi/OmenCommandCenterforLinux"
 license=('GPL')
 depends=('python' 'python-gobject' 'gtk4' 'libadwaita' 'python-pydbus' 'python-cairo' 'dkms' 'polkit')
 makedepends=('git' 'gcc' 'make' 'pkg-config')
 provides=('hp-laptop-manager')
 conflicts=('hp-laptop-manager')
-source=('git+https://github.com/yunusemreyl/OmenCommandCenterforLinux.git')
+source=('git+https://github.com/aadi/OmenCommandCenterforLinux.git')
 sha256sums=('SKIP')
 
 pkgver() {
@@ -43,10 +43,10 @@ package() {
   cp -r images/* "$pkgdir/usr/share/hp-manager/images/"
 
   # System files
-  cp data/com.yyl.hpmanager.conf "$pkgdir/etc/dbus-1/system.d/"
-  cp data/com.yyl.hpmanager.service "$pkgdir/etc/systemd/system/"
-  cp data/com.yyl.hpmanager.policy "$pkgdir/usr/share/polkit-1/actions/"
-  cp data/com.yyl.hpmanager.desktop "$pkgdir/usr/share/applications/"
+  cp data/com.aadi.hpmanager.conf "$pkgdir/etc/dbus-1/system.d/"
+  cp data/com.aadi.hpmanager.service "$pkgdir/etc/systemd/system/"
+  cp data/com.aadi.hpmanager.policy "$pkgdir/usr/share/polkit-1/actions/"
+  cp data/com.aadi.hpmanager.desktop "$pkgdir/usr/share/applications/"
 
 
 

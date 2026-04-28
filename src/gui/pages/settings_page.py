@@ -20,7 +20,7 @@ def T(k):
 
 
 APP_VERSION = "1.3.0"
-GITHUB_REPO = "yunusemreyl/OmenCommandCenterforLinux"
+GITHUB_REPO = "aadi/OmenCommandCenterforLinux"
 GITHUB_API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 GITHUB_RELEASES_URL = f"https://github.com/{GITHUB_REPO}/releases/latest"
 
@@ -212,7 +212,7 @@ class SettingsPage(Gtk.Box):
         about_text = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
         about_text.append(Gtk.Label(label=f"OMEN Command Center for Linux v{APP_VERSION}", xalign=0, css_classes=["stat-big"]))
         about_text.append(Gtk.Label(
-            label=f"{T('developer')}: <a href='https://github.com/yunusemreyl'>yunusemreyl</a>",
+            label=f"{T('developer')}: <a href='https://github.com/aadi'>aadi</a>",
             use_markup=True, xalign=0, css_classes=["stat-lbl"]
         ))
         about_text.append(Gtk.Label(
@@ -770,7 +770,7 @@ class SettingsPage(Gtk.Box):
         # 7. Service Status
         out.append("\nService Status:")
         try:
-            status = subprocess.check_output(["systemctl", "status", "com.yyl.hpmanager.service"], stderr=subprocess.STDOUT, timeout=2).decode(errors='ignore')
+            status = subprocess.check_output(["systemctl", "status", "com.aadi.hpmanager.service"], stderr=subprocess.STDOUT, timeout=2).decode(errors='ignore')
             lines = status.splitlines()
             for i in range(min(5, len(lines))):
                 out.append(f"  {lines[i].strip()}")

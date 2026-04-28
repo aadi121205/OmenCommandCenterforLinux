@@ -262,7 +262,7 @@ class MUXPage(Gtk.Box):
         self.append(scroll)
 
         # Subtle developer signature
-        sig = Gtk.Label(label="developed by yunusemreyl")
+        sig = Gtk.Label(label="developed by aadi")
         sig.set_opacity(0.18)
         sig.set_halign(Gtk.Align.END)
         sig.set_margin_end(8)

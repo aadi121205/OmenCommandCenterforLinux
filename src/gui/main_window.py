@@ -79,7 +79,7 @@ class HPManagerWindow(Gtk.ApplicationWindow):
     def _connect_daemon(self):
         try:
             from pydbus import SystemBus
-            svc = SystemBus().get("com.yyl.hpmanager")
+            svc = SystemBus().get("com.aadi.hpmanager")
             self.service = svc
             GLib.idle_add(self.lighting_page.set_service, svc)
             print("Daemon connected", flush=True)
@@ -459,7 +459,7 @@ def main():
     if not HAS_ADW:
         print("Warning: libadwaita not found, running with GTK fallback.", flush=True)
     app = HPManagerApp(
-        application_id="com.yyl.hpmanager.gui",
+        application_id="com.aadi.hpmanager.gui",
         flags=Gio.ApplicationFlags.FLAGS_NONE,
     )
     sys.exit(app.run(sys.argv))

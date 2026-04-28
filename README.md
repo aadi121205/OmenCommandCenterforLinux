@@ -11,8 +11,7 @@ A minimal fork of [OMEN Command Center for Linux](https://github.com/yunusemreyl
 ## Credits
 
 **Original project:** [OMEN Command Center for Linux](https://github.com/yunusemreyl/OmenCommandCenterforLinux)  
-**Original author:** [yunusemreyl](https://github.com/yunusemreyl)  
-**Original contributors:** [ja4e](https://github.com/ja4e), [babyinlinux](https://github.com/babyinlinux), [entharia](https://github.com/entharia)  
+**Original author:** [Yunus Emre YILMAZ (yunusemreyl)](https://github.com/yunusemreyl)  
 **Kernel module:** [TUXOV](https://github.com/TUXOV/hp-wmi-fan-and-backlight-control) — `hp-wmi-fan-and-backlight-control`
 
 This fork was created by **Aaditya Bhatia** to produce a lightweight, single-purpose RGB control tool from the original full-featured application.

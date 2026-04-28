@@ -27,7 +27,7 @@ A Linux kernel module that adds manual fan speed control and keyboard RGB backli
 The included `setup.sh` script auto-detects your distro, installs dependencies, and sets up DKMS:
 
 ```bash
-git clone https://github.com/yunusemreyl/OmenCommandCenterforLinux
+git clone https://github.com/aadi/OmenCommandCenterforLinux
 cd OmenCommandCenterforLinux/driver
 sudo ./setup.sh
 ```
@@ -51,7 +51,7 @@ sudo LLVM=1 ./setup.sh
 ### Manual DKMS Install
 
 ```bash
-git clone https://github.com/yunusemreyl/OmenCommandCenterforLinux
+git clone https://github.com/aadi/OmenCommandCenterforLinux
 cd OmenCommandCenterforLinux/driver
 make
 sudo make install-dkms
@@ -60,7 +60,7 @@ sudo make install-dkms
 ### Arch Linux (AUR)
 
 ```bash
-git clone https://github.com/yunusemreyl/OmenCommandCenterforLinux
+git clone https://github.com/aadi/OmenCommandCenterforLinux
 cd OmenCommandCenterforLinux/driver
 make install-arch
 ```
@@ -73,7 +73,7 @@ Add the repo as a flake input:
 {
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    hp_wmi_control.url = "github:yunusemreyl/OmenCommandCenterforLinux";
+    hp_wmi_control.url = "github:aadi/OmenCommandCenterforLinux";
   };
   outputs = { self, nixpkgs, hp_wmi_control, ... }: {
     nixosConfigurations.myhost = nixpkgs.lib.nixosSystem {
@@ -96,7 +96,7 @@ Add the repo as a flake input:
 ### Temporary Install (Testing Only)
 
 ```bash
-git clone https://github.com/yunusemreyl/OmenCommandCenterforLinux
+git clone https://github.com/aadi/OmenCommandCenterforLinux
 cd OmenCommandCenterforLinux/driver
 make
 sudo rmmod hp-wmi
@@ -159,7 +159,7 @@ echo low-power   | sudo tee /sys/firmware/acpi/platform_profile
 ## Tested On
 
 - Victus 16‑s1 (9Z791EA)
-- Victus 16‑r0053nt (i5‑13500H, RTX 4050) — *Tested by yunusemreyl*
+- Victus 16‑r0053nt (i5‑13500H, RTX 4050) — *Tested by aadi*
 - More testers needed! See [#1](https://github.com/TUXOV/hp-wmi-fan-and-backlight-control/issues/1)
 
 ## GUI

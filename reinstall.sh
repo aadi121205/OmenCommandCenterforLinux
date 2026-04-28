@@ -15,7 +15,7 @@ INSTALL_DIR="/usr/libexec/hp-manager"
 DATA_DIR="/usr/share/hp-manager"
 
 echo "[i] Stopping daemon..."
-systemctl stop com.yyl.hpmanager.service 2>/dev/null || true
+systemctl stop com.aadi.hpmanager.service 2>/dev/null || true
 
 echo "[i] Copying daemon files..."
 mkdir -p "$INSTALL_DIR"
@@ -30,7 +30,7 @@ cp "$SCRIPT_DIR/src/gui/pages/"*.py     "$DATA_DIR/gui/pages/"
 cp "$SCRIPT_DIR/src/gui/widgets/"*.py   "$DATA_DIR/gui/widgets/"
 
 echo "[i] Restarting daemon..."
-systemctl start com.yyl.hpmanager.service
+systemctl start com.aadi.hpmanager.service
 
 echo "[✓] Reinstall complete."
-echo "    Daemon status: $(systemctl is-active com.yyl.hpmanager.service 2>/dev/null || echo unknown)"
+echo "    Daemon status: $(systemctl is-active com.aadi.hpmanager.service 2>/dev/null || echo unknown)"

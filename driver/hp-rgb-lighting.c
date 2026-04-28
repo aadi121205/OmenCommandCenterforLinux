@@ -6,10 +6,10 @@
  * hotkeys, thermal profiles, rfkill).  This module only manages the
  * per-zone RGB colour of the keyboard backlight via WMI.
  *
- * Copyright (C) 2024 Yunus Emre YILMAZ <yunusemreyl>
+ * Copyright (C) 2024 Aaditya Bhatia <aadi>
  *
  * Based on hp-wmi.c by Matthew Garrett and Anssi Hannula, and on
- * hp-omen-rgb by yunusemreyl.
+ * hp-omen-rgb by aadi.
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
@@ -25,7 +25,7 @@
 #include <linux/string.h>
 #include <linux/types.h>
 
-MODULE_AUTHOR("Yunus Emre <yunusemreyl>");
+MODULE_AUTHOR("Aaditya Bhatia <aadi>");
 MODULE_DESCRIPTION("HP Omen/Victus keyboard RGB companion driver");
 MODULE_LICENSE("GPL");
 /* NOTE: No MODULE_ALIAS("wmi:...") — we do NOT claim any WMI GUID
