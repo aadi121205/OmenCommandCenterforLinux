@@ -1,11 +1,10 @@
 [Desktop Entry]
-Name=OMEN Command Center for Linux
-Comment=HP dizüstü bilgisayar yönetim aracı
-Comment[en]=HP Laptop management tool
+Name=HP RGB Control
+Comment=HP laptop keyboard RGB lighting control
 Exec=/usr/bin/hp-manager
 Icon=/usr/share/hp-manager/images/omenapplogo.png
 Terminal=false
 Type=Application
 Categories=System;Settings;HardwareSettings;
-Keywords=HP;Omen;Victus;Fan;RGB;GPU;Gaming;
+Keywords=HP;Omen;Victus;RGB;Lighting;Gaming;Keyboard;
 StartupNotify=true

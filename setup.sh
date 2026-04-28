@@ -5,7 +5,7 @@
 set -euo pipefail
 
 # --- CONFIGURATION ---
-APP_NAME="OMEN Command Center for Linux"
+APP_NAME="HP RGB Control"
 INSTALL_DIR="/usr/libexec/hp-manager"
 DATA_DIR="/usr/share/hp-manager"
 BIN_LINK="/usr/bin/hp-manager"
@@ -53,18 +53,6 @@ msg() {
             "updating")             printf '%s\n' "Uygulama güncelleniyor..." ;;
             "updated")              printf '%s\n' "Güncelleme tamamlandı!" ;;
             "usage")                printf '%s\n' "Kullanım: $0 [install|uninstall|update]" ;;
-            "select_power_manager") printf '\n%s\n' "Hangi güç yöneticisini kullanmak istersiniz?" ;;
-            "pm_detected")          printf '%b\n' "${CYAN}[i]${NC} Sistemde tespit edildi: ${1:-}" ;;
-            "pm_already_present")   printf '%s\n' "Sistemde zaten bir güç yöneticisi var (${1:-}), kurulum atlanıyor." ;;
-            "pm_opt_1")             printf '%s\n' "1) power-profiles-daemon (Varsayılan)" ;;
-            "pm_opt_2")             printf '%s\n' "2) tuned-ppd (Fedora kullanıyorsanız önerilir)" ;;
-            "pm_opt_3")             printf '%s\n' "3) TLP (https://github.com/linrunner/TLP)" ;;
-            "pm_opt_4")             printf '%s\n' "4) auto-cpufreq (https://github.com/AdnanHodzic/auto-cpufreq)" ;;
-            "pm_opt_5")             printf '%s\n' "5) Atla (Herhangi bir güç yöneticisi kurma)" ;;
-            "pm_choice")            printf '%s' "Seçiminiz (1-5): " ;;
-            "installing_pm")        printf '%s\n' "${1:-} kuruluyor..." ;;
-            "pm_not_in_repo")       printf '%s\n' "Uyarı: ${1:-} paket yöneticinizde bulunamadı. Lütfen manuel kurun." ;;
-            "skipping_pm")          printf '%s\n' "Güç yöneticisi kurulumu atlanıyor." ;;
             "driver_failed")        printf '%s\n' "Uyarı: Sürücü ${1:-} işlemi başarısız oldu. RGB kontrolü çalışmayabilir." ;;
             *)                      printf '%s\n' "$key" ;;
         esac
@@ -85,18 +73,6 @@ msg() {
             "updating")             printf '%s\n' "Updating application..." ;;
             "updated")              printf '%s\n' "Update complete!" ;;
             "usage")                printf '%s\n' "Usage: $0 [install|uninstall|update]" ;;
-            "select_power_manager") printf '\n%s\n' "Which power manager would you like to use?" ;;
-            "pm_detected")          printf '%b\n' "${CYAN}[i]${NC} Detected on system: ${1:-}" ;;
-            "pm_already_present")   printf '%s\n' "A power manager is already present (${1:-}), skipping installation." ;;
-            "pm_opt_1")             printf '%s\n' "1) power-profiles-daemon (Default)" ;;
-            "pm_opt_2")             printf '%s\n' "2) tuned-ppd (Recommended for Fedora users)" ;;
-            "pm_opt_3")             printf '%s\n' "3) TLP (https://github.com/linrunner/TLP)" ;;
-            "pm_opt_4")             printf '%s\n' "4) auto-cpufreq (https://github.com/AdnanHodzic/auto-cpufreq)" ;;
-            "pm_opt_5")             printf '%s\n' "5) Skip (Don't install any power manager)" ;;
-            "pm_choice")            printf '%s' "Your choice (1-5): " ;;
-            "installing_pm")        printf '%s\n' "Installing ${1:-}..." ;;
-            "pm_not_in_repo")       printf '%s\n' "Warning: ${1:-} was not found in your package manager. Please install it manually." ;;
-            "skipping_pm")          printf '%s\n' "Skipping power manager installation." ;;
             "driver_failed")        printf '%s\n' "Warning: Driver ${1:-} failed. RGB control may not work." ;;
             *)                      printf '%s\n' "$key" ;;
         esac
@@ -136,53 +112,10 @@ detect_pm() {
     log "$(msg pm_name "$PM")"
 }
 
-# --- POWER MANAGER DETECTION ---
-# Returns the name of the first active power manager found, or empty string.
-detect_active_power_manager() {
-    # Check running services first (most reliable)
-    local services=(
-        "power-profiles-daemon"
-        "tuned"
-        "tuned-ppd"
-        "tlp"
-        "auto-cpufreq"
-    )
-    for svc in "${services[@]}"; do
-        if systemctl is-active --quiet "${svc}.service" 2>/dev/null; then
-            echo "$svc"
-            return
-        fi
-    done
-
-    # Check installed binaries as fallback
-    command -v tlp        &>/dev/null && { echo "tlp";        return; }
-    command -v auto-cpufreq &>/dev/null && { echo "auto-cpufreq"; return; }
-
-    # Check installed packages as last resort
-    if command -v rpm &>/dev/null; then
-        for pkg in power-profiles-daemon tuned tuned-ppd tlp; do
-            rpm -q "$pkg" &>/dev/null 2>&1 && { echo "$pkg"; return; }
-        done
-    fi
-    if command -v dpkg &>/dev/null; then
-        for pkg in power-profiles-daemon tlp auto-cpufreq; do
-            dpkg -l "$pkg" 2>/dev/null | grep -q "^ii" && { echo "$pkg"; return; }
-        done
-    fi
-    if command -v pacman &>/dev/null; then
-        for pkg in power-profiles-daemon tlp auto-cpufreq; do
-            pacman -Q "$pkg" &>/dev/null 2>&1 && { echo "$pkg"; return; }
-        done
-    fi
-
-    echo ""
-}
-
 # --- INSTALL DEPENDENCIES ---
 install_dependencies() {
     info "$(msg installing_deps)"
 
-    # Base packages — power manager NOT included here
     case $PM in
         pacman)
             $INSTALL_CMD python python-gobject gtk4 libadwaita python-pydbus python-cairo
@@ -194,54 +127,6 @@ install_dependencies() {
             $INSTALL_CMD python3 python3-gobject gtk4 libadwaita python3-pydbus python3-cairo
             ;;
     esac
-
-    # --- Power Manager ---
-    # If one is already active/installed, skip entirely — no question asked.
-    local existing_pm
-    existing_pm=$(detect_active_power_manager)
-
-    if [ -n "$existing_pm" ]; then
-        log "$(msg pm_already_present "$existing_pm")"
-    else
-        # Nothing found — ask the user which one to install
-        msg select_power_manager
-        msg pm_opt_1
-        msg pm_opt_2
-        msg pm_opt_3
-        msg pm_opt_4
-        msg pm_opt_5
-        msg pm_choice
-        read -r choice
-
-        case ${choice:-1} in
-            2)
-                local pkg="tuned-ppd"
-                info "$(msg installing_pm "$pkg")"
-                $INSTALL_CMD "$pkg" || warn "$(msg pm_not_in_repo "$pkg")"
-                ;;
-            3)
-                local pkg="tlp"
-                info "$(msg installing_pm "$pkg")"
-                $INSTALL_CMD "$pkg" || warn "$(msg pm_not_in_repo "$pkg")"
-                ;;
-            4)
-                local pkg="auto-cpufreq"
-                info "$(msg installing_pm "$pkg")"
-                $INSTALL_CMD "$pkg" || warn "$(msg pm_not_in_repo "$pkg")"
-                ;;
-            5)
-                info "$(msg skipping_pm)"
-                ;;
-            *)
-                # Default (1 or Enter): power-profiles-daemon
-                local pkg="power-profiles-daemon"
-                info "$(msg installing_pm "$pkg")"
-                if ! $INSTALL_CMD "$pkg" 2>/dev/null; then
-                    warn "$(msg pm_not_in_repo "$pkg")"
-                fi
-                ;;
-        esac
-    fi
 
     log "$(msg deps_installed)"
 }
@@ -625,12 +510,12 @@ do_update() {
 
 # --- MAIN ---
 if [ $# -eq 0 ]; then
-    echo -e "${CYAN}${APP_NAME} - Unified Setup Tool (v${VERSION})${NC}"
+    echo -e "${CYAN}${APP_NAME} - Setup Tool (v${VERSION})${NC}"
     echo "Usage: sudo $0 [command]"
     echo ""
     echo "Commands:"
-    echo "  install    - Full installation of application and kernel driver"
-    echo "  uninstall  - Complete removal of application and driver (keeps config)"
+    echo "  install    - Install application and RGB kernel driver"
+    echo "  uninstall  - Remove application and driver"
     echo "  update     - Pull latest changes and reinstall"
     echo ""
     echo "Example: sudo $0 install"

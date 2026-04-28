@@ -106,7 +106,7 @@ class LightingPage(Gtk.Box):
             self.brightness_scale.set_value(self.brightness)
             self.speed_scale.set_value(self.speed)
 
-            modes = ["static", "breathing", "wave", "cycle"]
+            modes = ["static", "breathing", "wave", "cycle", "pulse", "chase", "comet", "twinkle"]
             if self.mode in modes:
                 self.mode_dd.set_selected(modes.index(self.mode))
 
@@ -231,7 +231,10 @@ class LightingPage(Gtk.Box):
         grid = Gtk.Grid(column_spacing=30, row_spacing=15, halign=Gtk.Align.CENTER)
 
         grid.attach(Gtk.Label(label=T("effect"), xalign=1, css_classes=["section-title"]), 0, 0, 1, 1)
-        self.mode_dd = Gtk.DropDown(model=Gtk.StringList.new([T("static_eff"), T("breathing"), T("wave"), T("cycle")]))
+        self.mode_dd = Gtk.DropDown(model=Gtk.StringList.new([
+            T("static_eff"), T("breathing"), T("wave"), T("cycle"),
+            T("pulse"), T("chase"), T("comet"), T("twinkle"),
+        ]))
         self.mode_dd.connect("notify::selected", self._on_mode)
         grid.attach(self.mode_dd, 1, 0, 1, 1)
 
@@ -368,7 +371,7 @@ class LightingPage(Gtk.Box):
                 root.present()
 
     def _on_mode(self, dd, _):
-        modes = ["static", "breathing", "wave", "cycle"]
+        modes = ["static", "breathing", "wave", "cycle", "pulse", "chase", "comet", "twinkle"]
         self.mode = modes[dd.get_selected()]
         self.kb_preview.mode = self.mode
         self.kb_preview.queue_draw()

@@ -29,6 +29,7 @@ TRANSLATIONS = {
         "zone": "Zone", "all_zones": "All",
         "effect": "EFFECT", "direction": "DIRECTION", "speed": "SPEED", "brightness": "BRIGHTNESS",
         "static_eff": "Static", "breathing": "Breathing", "wave": "Wave", "cycle": "Cycle",
+        "pulse": "Pulse", "chase": "Chase", "comet": "Comet", "twinkle": "Twinkle",
         "ltr": "Left → Right", "rtl": "Right → Left",
         "win_lock": "Gaming Key Lock",
         # Keyboard page
