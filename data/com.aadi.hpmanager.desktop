@@ -2,7 +2,7 @@
 Name=HP RGB Control
 Comment=HP laptop keyboard RGB lighting control
 Exec=/usr/bin/hp-manager
-Icon=/usr/share/hp-manager/images/omenapplogo.png
+Icon=/usr/share/hp-manager/images/omenlogo.png
 Terminal=false
 Type=Application
 Categories=System;Settings;HardwareSettings;
