@@ -14,7 +14,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 MODNAME="hp-rgb-lighting"
-MODVER=$(grep -oP 'PACKAGE_VERSION="\K[^"]+' dkms.conf 2>/dev/null || echo "1.3.0")
+MODVER=$(grep -oP 'PACKAGE_VERSION="\K[^"]+' dkms.conf 2>/dev/null || echo "1.3.5")
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # MOK_DIR — initialised here so it is always defined (avoids unbound variable
@@ -39,6 +39,10 @@ if [ "$KVER_MAJOR" -gt 7 ] || { [ "$KVER_MAJOR" -eq 7 ] && [ "$KVER_MINOR" -ge 0
 fi
 if $FORCE_CUSTOM_HPWMI; then
     STOCK_FAN_SUPPORT=false
+fi
+# Allow the parent installer to request RGB-only mode (e.g. user declined patched hp-wmi).
+if [ "${FORCE_RGB_ONLY:-false}" = true ]; then
+    STOCK_FAN_SUPPORT=true
 fi
 
 info()  { echo -e "${BLUE}[INFO]${NC} $*"; }
@@ -312,7 +316,7 @@ DKMSRGB
         # Enrol MOK if not yet enrolled
         if mokutil --test-key "$MOK_DIR/MOK.der" 2>/dev/null | grep -qi "not enrolled"; then
             info "Enrolling MOK key..."
-            printf "aadi\naadi\n" | mokutil --import "$MOK_DIR/MOK.der" 2>/dev/null \
+            printf "yunusemreyl\nyunusemreyl\n" | mokutil --import "$MOK_DIR/MOK.der" 2>/dev/null \
                 || warn "Failed to import MOK key."
 
             echo ""
@@ -329,7 +333,7 @@ DKMSRGB
             echo -e "${YELLOW}║  1. Select 'Enroll MOK'                                   ║${NC}"
             echo -e "${YELLOW}║  2. Select 'Continue'                                     ║${NC}"
             echo -e "${YELLOW}║  3. Select 'Yes'                                          ║${NC}"
-            echo -e "${YELLOW}║  4. Enter password: ${GREEN}aadi${YELLOW}                           ║${NC}"
+            echo -e "${YELLOW}║  4. Enter password: ${GREEN}yunusemreyl${YELLOW}                           ║${NC}"
             echo -e "${YELLOW}║  5. Select 'Reboot'                                       ║${NC}"
             echo -e "${YELLOW}╚═══════════════════════════════════════════════════════════╝${NC}"
             echo ""
